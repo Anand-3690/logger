@@ -1,3 +1,5 @@
+process.env.TZ = 'Asia/Kolkata';
+
 import express, { Request, Response } from 'express';
 import path from 'path';
 import multer from 'multer';
@@ -237,7 +239,7 @@ async function startServer() {
   // 3. POST /api/logs - Handle log submission with multipart or JSON payload
   app.post('/api/logs', upload.single('photo'), async (req: Request, res: Response) => {
     try {
-      let { log_date, category_id, notes, photo_url_input } = req.body;
+      let { log_date, category_id, notes, photo_url_input, status } = req.body;
 
       if (!log_date) {
         log_date = new Date().toISOString().split('T')[0];
@@ -267,6 +269,7 @@ async function startServer() {
         category_id,
         notes: notes || null,
         photo_url,
+        status: status === 'absent' ? 'absent' : 'present',
       });
 
       res.status(201).json(newLog);

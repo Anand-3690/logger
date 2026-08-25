@@ -10,6 +10,7 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { NotificationSettingsCard } from './components/NotificationSettingsCard';
+import { QuickLog } from './components/QuickLog';
 import { registerServiceWorker } from './utils/pushNotifications';
 import { Plus, Check, AlertCircle, Loader2 } from 'lucide-react';
 
@@ -18,6 +19,7 @@ const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 export default function App() {
   // Navigation & View State
   const [currentView, setCurrentView] = useState<'dashboard' | 'reports'>('dashboard');
+  const [, setForceRender] = useState(0);
 
   // Authentication State
   const [authToken, setAuthToken] = useState<string | null>(() => {
@@ -59,9 +61,26 @@ export default function App() {
 
   // Register PWA Service Worker on mount
   useEffect(() => {
-    registerServiceWorker().catch((err) => {
+    registerServiceWorker().then(reg => {
+      if (reg) {
+        reg.update().catch(err => console.warn('SW update failed:', err));
+      }
+    }).catch((err) => {
       console.warn('Service worker registration failed:', err);
     });
+
+    // Listen for navigation messages from the Service Worker
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
+        window.history.pushState(null, '', event.data.url);
+        setForceRender(prev => prev + 1);
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handleMessage);
+    
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   // Check Auth Status on initial load
@@ -332,6 +351,29 @@ export default function App() {
   // If unauthenticated or accessing /login, render the Auth checkpoint screen
   if (!isAuthenticated || window.location.pathname === '/login') {
     return <AuthScreen isSetup={isAuthSetup} onAuthenticated={handleAuthenticated} />;
+  }
+
+  // Deep Link Routing: Quick Log check-in from push notification
+  if (window.location.pathname.replace(/\/$/, '') === '/quick-log') {
+    const params = new URLSearchParams(window.location.search);
+    const quickLogCategoryId = params.get('category_id');
+    
+    if (quickLogCategoryId) {
+      return (
+        <QuickLog
+          categoryId={quickLogCategoryId}
+          authFetch={authFetch}
+          onClose={() => {
+            fetchLogs(selectedDate); // refresh logs
+            setForceRender(prev => prev + 1);
+          }}
+        />
+      );
+    } else {
+      // Missing category_id, gracefully degrade to dashboard
+      window.history.replaceState(null, '', '/');
+      setForceRender(prev => prev + 1);
+    }
   }
 
   return (

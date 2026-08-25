@@ -24,6 +24,7 @@ export interface DailyLogRecord {
   category_id: string;
   notes?: string | null;
   photo_url?: string | null;
+  status?: 'present' | 'absent';
   created_at: string;
 }
 
@@ -574,6 +575,7 @@ class DatabaseManager {
     category_id: string;
     notes?: string | null;
     photo_url?: string | null;
+    status?: 'present' | 'absent';
   }) {
     const newLog: DailyLogRecord = {
       id: uuidv4(),
@@ -581,6 +583,7 @@ class DatabaseManager {
       category_id: input.category_id,
       notes: input.notes ? input.notes.trim() : null,
       photo_url: input.photo_url || null,
+      status: input.status || 'present',
       created_at: new Date().toISOString(),
     };
 

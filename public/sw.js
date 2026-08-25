@@ -78,6 +78,7 @@ self.addEventListener('notificationclick', (event) => {
             log_date: today,
             category_id: data.category_id,
             notes: `Recorded automatically via Push Notification (Present / Yes)`,
+            status: 'present',
           };
 
           const res = await fetch('/api/logs', {
@@ -110,21 +111,22 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil(
       (async () => {
         try {
-          // Send acknowledgment to action endpoint
-          const res = await fetch('/api/notifications/action', {
+          const logPayload = {
+            log_date: today,
+            category_id: data.category_id,
+            notes: `Marked as absent via Push Notification (Absent / No)`,
+            status: 'absent',
+          };
+
+          const res = await fetch('/api/logs', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              action: 'absent',
-              category_id: data.category_id,
-              category_name: data.category_name,
-              log_date: today,
-            }),
+            body: JSON.stringify(logPayload),
           });
 
-          console.log('[SW] Recorded absent response:', res.status);
+          console.log('[SW] Background log recorded (absent):', res.status);
 
           // Show discreet feedback notification
           await self.registration.showNotification('Check-in Noted ⚪', {
@@ -144,18 +146,35 @@ self.addEventListener('notificationclick', (event) => {
   // If clicked notification body itself without button action: Open / focus the app window
   event.waitUntil(
     (async () => {
-      const urlToOpen = data.url || '/';
+      // Build the target URL using the category_id from payload
+      let targetPath = data.url || '/';
+      if (data.category_id) {
+        targetPath = `/quick-log?category_id=${data.category_id}`;
+      }
+      
+      const urlToOpen = new URL(targetPath, self.location.origin).href;
+
       const allClients = await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
       });
 
+      // If the app is already open, focus it and potentially navigate it
       for (const client of allClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          return client.focus();
+          await client.focus();
+          
+          // Send a message to the client to navigate smoothly without a hard reload
+          client.postMessage({
+            type: 'NAVIGATE',
+            url: targetPath
+          });
+          
+          return;
         }
       }
 
+      // Otherwise open a new window
       if (self.clients.openWindow) {
         return self.clients.openWindow(urlToOpen);
       }

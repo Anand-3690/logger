@@ -69,7 +69,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   // Compute stats for current selected month
   const stats = useMemo(() => {
-    const filteredLogs = logs.filter((log) => log.log_date.startsWith(selectedMonth));
+    // Only count "present" logs (or undefined/legacy logs) for positive stats
+    const filteredLogs = logs.filter(
+      (log) => log.log_date.startsWith(selectedMonth) && log.status !== 'absent'
+    );
     const totalLogs = filteredLogs.length;
 
     // Unique active days

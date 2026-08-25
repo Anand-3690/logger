@@ -61,6 +61,7 @@ import {
   Wrench,
   Dna,
   HeartHandshake,
+  XCircle,
   LucideIcon
 } from 'lucide-react';
 
@@ -79,6 +80,7 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   Layers,
   Sparkles,
   CheckCircle2,
+  XCircle,
   Pencil,
   Wrench,
 

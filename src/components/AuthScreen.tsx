@@ -62,28 +62,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ isSetup, onAuthenticated
     }
   };
 
-  const handleQuickDemoLogin = async () => {
-    setPassword('admin123');
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: 'admin123' }),
-      });
-      const data = await res.json();
-      if (res.ok && data.token) {
-        onAuthenticated(data.token);
-      } else {
-        setError(data.error || 'Failed to authenticate with demo password');
-      }
-    } catch (e: any) {
-      setError('Connection error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-4 selection:bg-blue-500 selection:text-white">
@@ -187,27 +165,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ isSetup, onAuthenticated
               )}
             </button>
           </form>
-
-          {/* Quick Demo Credentials Bar */}
-          {mode === 'login' && (
-            <div className="mt-6 pt-5 border-t border-neutral-800/80">
-              <div className="flex items-center justify-between text-xs text-neutral-400 mb-2">
-                <span>Default Passcode:</span>
-                <code className="px-2 py-0.5 rounded bg-neutral-950 border border-neutral-800 text-neutral-300 font-mono">
-                  admin123
-                </code>
-              </div>
-              <button
-                type="button"
-                onClick={handleQuickDemoLogin}
-                disabled={isLoading}
-                className="w-full py-2 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Fill & Unlock With Default Passcode
-              </button>
-            </div>
-          )}
 
           {/* Toggle setup mode */}
           <div className="mt-4 text-center">

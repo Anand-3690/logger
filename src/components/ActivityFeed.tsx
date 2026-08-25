@@ -106,32 +106,46 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         const color = getCategoryColor(category?.color_code);
         const iconName = category?.icon || 'Sparkles';
         const categoryName = category?.name || 'Uncategorized';
+        const isAbsent = log.status === 'absent';
 
         return (
           <div
             key={log.id}
             id={`log-item-${log.id}`}
-            className="group bg-white rounded-2xl p-4 sm:p-5 border border-neutral-200/80 shadow-xs hover:shadow-md transition-all relative overflow-hidden"
+            className={`group rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all relative overflow-hidden ${
+              isAbsent
+                ? 'bg-red-50/40 border-2 border-red-200/80'
+                : 'bg-white border border-neutral-200/80'
+            }`}
           >
             {/* Left Category Accent Line */}
             <div
-              className="absolute left-0 top-0 bottom-0 w-1.5"
-              style={{ backgroundColor: color }}
+              className={`absolute left-0 top-0 bottom-0 ${isAbsent ? 'w-2 opacity-40 grayscale' : 'w-1.5'}`}
+              style={{ backgroundColor: isAbsent ? '#ef4444' : color }}
             />
 
             <div className="flex items-start justify-between gap-3 mb-2.5">
               {/* Category Pill with Icon & Name */}
               <div className="flex items-center gap-2.5">
                 <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs"
-                  style={{ backgroundColor: color }}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs ${
+                    isAbsent ? 'bg-red-400' : ''
+                  }`}
+                  style={{ backgroundColor: isAbsent ? undefined : color }}
                 >
-                  <CategoryIcon name={iconName} className="w-4 h-4 text-white" />
+                  <CategoryIcon name={isAbsent ? 'XCircle' : iconName} className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-neutral-900 leading-tight">
-                    {categoryName}
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-neutral-900 leading-tight">
+                      {categoryName}
+                    </h4>
+                    {isAbsent && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200">
+                        Absent
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[11px] text-neutral-400 font-medium">
                     {formatTime(log.created_at)}
                   </span>

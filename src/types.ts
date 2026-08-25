@@ -19,6 +19,7 @@ export interface DailyLog {
   category_id: string;
   notes?: string | null;
   photo_url?: string | null;
+  status?: 'present' | 'absent';
   created_at: string; // ISO timestamp
   category?: Category;
 }

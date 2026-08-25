@@ -109,7 +109,7 @@ export function createCategoryReminderPayload(category: CategoryRecord, targetDa
       category_id: category.id,
       category_name: category.name,
       log_date: todayStr,
-      url: '/dashboard',
+      url: `/quick-log?category_id=${category.id}`,
       timestamp: Date.now(),
     },
     actions: [
