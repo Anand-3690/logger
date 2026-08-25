@@ -10,21 +10,6 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 export async function uploadPhotoFile(file: Express.Multer.File): Promise<string> {
-  // If @vercel/blob token is provided in process.env.BLOB_READ_WRITE_TOKEN:
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      // Dynamic import to support environment if @vercel/blob is installed
-      const { put } = await import('@vercel/blob');
-      const filename = `${uuidv4()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const blob = await put(filename, file.buffer, {
-        access: 'public',
-      });
-      return blob.url;
-    } catch (err) {
-      console.warn('Vercel Blob upload failed, falling back to local storage handler:', err);
-    }
-  }
-
   // Fallback storage: save to uploads folder or return data URL
   const ext = path.extname(file.originalname) || '.jpg';
   const filename = `${uuidv4()}${ext}`;
