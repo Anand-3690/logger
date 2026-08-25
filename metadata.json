@@ -1,0 +1,6 @@
+{
+  "name": "Daily Activity Logger",
+  "description": "A mobile-first daily activity logging PWA with scheduled Web Push notifications, interactive check-in action buttons, photo logs, and monthly reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
