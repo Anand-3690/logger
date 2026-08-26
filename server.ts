@@ -22,7 +22,7 @@ const upload = multer({
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3005;
 
   // Middlewares for JSON and form decoding
   app.use(express.json({ limit: '20mb' }));

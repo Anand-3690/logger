@@ -1,81 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { Category } from '../types';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db';
 import { getTodayLocalDate } from '../utils/dateUtils';
+import { DailyLog } from '../types';
 
 interface QuickLogProps {
   categoryId: string;
   onClose: () => void;
-  authFetch: (url: string, options?: RequestInit) => Promise<Response>;
 }
 
-export const QuickLog: React.FC<QuickLogProps> = ({ categoryId, onClose, authFetch }) => {
+export const QuickLog: React.FC<QuickLogProps> = ({ categoryId, onClose }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [category, setCategory] = useState<Category | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchCategory = async () => {
-      try {
-        const res = await authFetch('/api/categories');
-        if (res.ok) {
-          const categories: Category[] = await res.json();
-          const found = categories.find((c) => c.id === categoryId);
-          if (found) {
-            setCategory(found);
-          } else {
-            setError('Category not found.');
-          }
-        } else {
-          setError('Failed to fetch categories.');
-        }
-      } catch (err) {
-        setError('Connection error occurred.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchCategory();
-  }, [categoryId, authFetch]);
+  // We explicitly return `null` if not found so we can distinguish between 
+  // 'undefined' (Dexie is loading) and 'null' (Category does not exist)
+  const category = useLiveQuery(async () => {
+    const cat = await db.categories.get(categoryId);
+    return cat || null;
+  }, [categoryId]);
 
   const handleAction = async (action: 'present' | 'absent') => {
     setIsSubmitting(true);
     const today = getTodayLocalDate();
+    const logId = crypto.randomUUID();
 
     try {
-      const res = await authFetch('/api/logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Instant local transaction
+      await db.transaction('rw', db.dailyLogs, db.syncQueue, async () => {
+        await db.dailyLogs.put({
+          id: logId,
           log_date: today,
           category_id: categoryId,
-          notes: action === 'present' ? 'Recorded manually via Quick Log' : 'Marked as absent via Quick Log',
+          notes: action === 'present' ? 'Quick Log' : 'Absent via Quick Log',
           status: action,
-        }),
+          created_at: new Date().toISOString(),
+        } as DailyLog);
+        
+        await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'upsert', timestamp: Date.now() });
       });
 
-      if (!res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        let errMessage = 'Failed to save log';
-        if (contentType.includes('application/json')) {
-          const data = await res.json().catch(() => ({}));
-          errMessage = data.error || errMessage;
-        }
-        throw new Error(errMessage);
-      }
-      
-      // Navigate back to the dashboard using standard window history replaceState or just changing location
+      // Seamlessly transition back to the dashboard
       window.history.replaceState(null, '', '/');
-      onClose(); // Triggers the re-render in App.tsx
-    } catch (err: any) {
+      onClose();
+    } catch (err) {
       console.error('Failed to log action:', err);
-      setError(err.message || 'Failed to save log.');
       setIsSubmitting(false);
     }
   };
 
-  if (isLoading) {
+  // 1. Loading State (Usually resolves in < 10ms)
+  if (category === undefined) {
     return (
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-4">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -83,16 +58,17 @@ export const QuickLog: React.FC<QuickLogProps> = ({ categoryId, onClose, authFet
     );
   }
 
-  if (error || !category) {
+  // 2. Error State (E.g., User clicked an old notification for a deleted category)
+  if (category === null) {
     return (
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-4 text-center">
-        <div className="text-red-400 mb-4 text-lg">{error || 'An error occurred'}</div>
+        <div className="text-red-400 mb-4 text-lg font-semibold">Category not found or deleted.</div>
         <button
           onClick={() => {
             window.history.replaceState(null, '', '/');
             onClose();
           }}
-          className="px-6 py-3 bg-neutral-800 text-white rounded-xl hover:bg-neutral-700 transition-colors"
+          className="px-6 py-3 bg-neutral-800 text-white rounded-xl hover:bg-neutral-700 transition-colors font-medium shadow-sm"
         >
           Return to Dashboard
         </button>
@@ -100,13 +76,14 @@ export const QuickLog: React.FC<QuickLogProps> = ({ categoryId, onClose, authFet
     );
   }
 
+  // 3. Ready State
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 text-neutral-100 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Frosted glow background shapes */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-md w-full glass-dark rounded-3xl p-6 sm:p-8 space-y-8 text-center relative z-10">
+      <div className="max-w-md w-full glass-dark rounded-3xl p-6 sm:p-8 space-y-8 text-center relative z-10 shadow-2xl">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2">Daily Check-in</h1>
           <p className="text-neutral-300 text-base sm:text-lg">

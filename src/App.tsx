@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './db';
 import { Category, DailyLog } from './types';
 import { Header } from './components/Header';
 import { DaySelector } from './components/DaySelector';
@@ -13,36 +15,59 @@ import { QuickLog } from './components/QuickLog';
 import { registerServiceWorker } from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
 import { Plus, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { processSyncQueue,pullFromCloud } from './syncEngine';
+import { useAuth } from './AuthContext';
+import { LoginScreen } from './LoginScreen';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 
 export default function App() {
+  
+  const { session, signOut } = useAuth();
+  if (!session) {
+    return <LoginScreen />;
+  }
+  
   // Navigation & View State
   const [currentView, setCurrentView] = useState<'dashboard' | 'reports'>('dashboard');
   const [, setForceRender] = useState(0);
 
   // Authentication State
-  const [authToken, setAuthToken] = useState<string | null>(() => {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
-  });
+  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem(AUTH_TOKEN_KEY));
   const [isAuthSetup, setIsAuthSetup] = useState<boolean>(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(false);
 
-  // Default to today's date in local calendar time (e.g. 2026-08-25)
-  const todayStr = useMemo(() => {
-    return getTodayLocalDate();
-  }, []);
-
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  // Date States
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDate());
   const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentLocalMonth());
 
-  // Data States
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [currentDateLogs, setCurrentDateLogs] = useState<DailyLog[]>([]);
-  const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(true);
-  const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(true);
+  // ==========================================
+  // LOCAL-FIRST DATA LAYER (DEXIE)
+  // ==========================================
+  const categories = useLiveQuery(() => db.categories.toArray()) || [];
+  
+  const rawCurrentDateLogs = useLiveQuery(
+    () => db.dailyLogs.where('log_date').equals(selectedDate).toArray(),
+    [selectedDate]
+  ) || [];
+  
+  const rawAllLogs = useLiveQuery(() => db.dailyLogs.toArray()) || [];
+  
+  // 🚀 THE JOIN: Map the category data back onto the logs
+  const currentDateLogs = useMemo(() => {
+    return rawCurrentDateLogs.map(log => ({
+      ...log,
+      category: categories.find(c => c.id === log.category_id)
+    }));
+  }, [rawCurrentDateLogs, categories]);
+
+  const allLogs = useMemo(() => {
+    return rawAllLogs.map(log => ({
+      ...log,
+      category: categories.find(c => c.id === log.category_id)
+    }));
+  }, [rawAllLogs, categories]);
 
   // Modals & UI States
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -51,25 +76,17 @@ export default function App() {
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Show Toast
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Register PWA Service Worker on mount
+  // PWA Setup
   useEffect(() => {
     registerServiceWorker().then(reg => {
-      if (reg) {
-        reg.update().catch(err => console.warn('SW update failed:', err));
-      }
-    }).catch((err) => {
-      console.warn('Service worker registration failed:', err);
-    });
+      if (reg) reg.update().catch(err => console.warn('SW update failed:', err));
+    }).catch((err) => console.warn('Service worker registration failed:', err));
 
-    // Listen for navigation messages from the Service Worker
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
         window.history.pushState(null, '', event.data.url);
@@ -77,69 +94,41 @@ export default function App() {
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
+  }, []);
+
+  // ==========================================
+  // SYNC ENGINE LISTENER
+  // ==========================================
+  useEffect(() => {
+    // Wrap our startup logic in an async function
+    const performFullSync = async () => {
+      await pullFromCloud();    // 1. Pull down any new cloud data
+      await processSyncQueue(); // 2. Push up any pending local changes
+    };
+
+    // Run immediately on load
+    performFullSync();
+
+    // Listen for the browser coming back online
+    window.addEventListener('online', performFullSync);
     
+    // Poll the queue every 15 seconds as a fallback
+    const interval = setInterval(processSyncQueue, 15000);
+
     return () => {
-      navigator.serviceWorker?.removeEventListener('message', handleMessage);
+      window.removeEventListener('online', performFullSync);
+      clearInterval(interval);
     };
   }, []);
 
-  // Check Auth Status on initial load
-  const checkAuthStatus = useCallback(async (tokenToCheck?: string | null) => {
-    try {
-      setIsCheckingAuth(true);
-      const token = tokenToCheck !== undefined ? tokenToCheck : authToken;
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch('/api/auth/status', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setIsAuthSetup(data.isSetup);
-        setIsAuthenticated(data.isAuthenticated);
-
-        // If not authenticated, clear invalid token and reflect /login path
-        if (!data.isAuthenticated) {
-          if (token) {
-            localStorage.removeItem(AUTH_TOKEN_KEY);
-            setAuthToken(null);
-          }
-          if (window.location.pathname !== '/login') {
-            window.history.replaceState(null, '', '/login');
-          }
-        } else {
-          // If authenticated and on /login, move to /
-          if (window.location.pathname === '/login') {
-            window.history.replaceState(null, '', '/');
-          }
-        }
-      } else {
-        setIsAuthenticated(false);
-      }
-    } catch (err) {
-      console.error('Error checking auth status:', err);
-      setIsAuthenticated(false);
-    } finally {
-      setIsCheckingAuth(false);
-    }
-  }, [authToken]);
-
-  useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
-
-  // Authenticated fetch helper
+  // Network Fetch Wrapper (Legacy fallback for Auth / external endpoints)
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
       const headers = new Headers(options.headers || {});
-      if (authToken) {
-        headers.set('Authorization', `Bearer ${authToken}`);
-      }
-
+      if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
       const response = await fetch(url, { ...options, headers });
       if (response.status === 401) {
-        // Unauthorized
         localStorage.removeItem(AUTH_TOKEN_KEY);
         setAuthToken(null);
         setIsAuthenticated(false);
@@ -153,191 +142,126 @@ export default function App() {
     [authToken]
   );
 
-  // Fetch Categories
-  const fetchCategories = useCallback(async () => {
-    if (!isAuthenticated) return;
-    try {
-      setIsLoadingCategories(true);
-      const res = await authFetch('/api/categories');
-      if (!res.ok) throw new Error('Failed to load categories');
-      const data = await res.json();
-      setCategories(data);
-    } catch (err: any) {
-      console.error('Error loading categories:', err);
-    } finally {
-      setIsLoadingCategories(false);
-    }
-  }, [authFetch, isAuthenticated]);
-
-  // Fetch Logs for selected date and all logs
-  const fetchLogs = useCallback(async (date: string) => {
-    if (!isAuthenticated) return;
-    try {
-      setIsLoadingLogs(true);
-      const [dateRes, allRes] = await Promise.all([
-        authFetch(`/api/logs?date=${date}`),
-        authFetch('/api/logs'),
-      ]);
-
-      if (dateRes.ok) {
-        const dateData = await dateRes.json();
-        setCurrentDateLogs(dateData);
-      }
-
-      if (allRes.ok) {
-        const allData = await allRes.json();
-        setAllLogs(allData);
-      }
-    } catch (err: any) {
-      console.error('Error fetching logs:', err);
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  }, [authFetch, isAuthenticated]);
-
-  // Initial Load when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchCategories();
-      fetchLogs(selectedDate);
-    }
-  }, [isAuthenticated, fetchCategories, fetchLogs, selectedDate]);
-
-  // When date changes, update logs
   const handleSelectDate = (date: string) => {
     setSelectedDate(date);
     setSelectedMonth(date.substring(0, 7));
   };
 
-  // Handle Save Log
+  // ==========================================
+  // LOCAL-FIRST MUTATIONS
+  // ==========================================
+
   const handleSaveLog = async (formData: FormData) => {
-    const res = await authFetch('/api/logs', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok) {
-      let errorMsg = 'Failed to save log';
-      if (contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({}));
-        errorMsg = errData.error || errorMsg;
-      } else {
-        const text = await res.text().catch(() => '');
-        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
-      }
-      throw new Error(errorMsg);
-    }
-
-    if (contentType.includes('application/json')) {
-      await res.json().catch(() => ({}));
-    }
-    await fetchLogs(selectedDate);
-    showToast('Activity log saved successfully!');
-  };
-
-  // Handle Add Category
-  const handleAddCategory = async (newCat: {
-    name: string;
-    color_code: string;
-    icon: string;
-    reminder_time?: string | null;
-  }) => {
-    const res = await authFetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCat),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok) {
-      let errorMsg = 'Failed to create category';
-      if (contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({}));
-        errorMsg = errData.error || errorMsg;
-      } else {
-        const text = await res.text().catch(() => '');
-        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
-      }
-      throw new Error(errorMsg);
-    }
-
-    const created: Category = await res.json();
-    setCategories((prev) => [...prev, created]);
-    showToast(`Category "${created.name}" created!`);
-    return created;
-  };
-
-  // Handle Update Category (including reminder_time)
-  const handleUpdateCategory = async (id: string, updates: Partial<Category>) => {
-    const res = await authFetch(`/api/categories/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok) {
-      let errorMsg = 'Failed to update category';
-      if (contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({}));
-        errorMsg = errData.error || errorMsg;
-      } else {
-        const text = await res.text().catch(() => '');
-        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
-      }
-      throw new Error(errorMsg);
-    }
-
-    const updated: Category = await res.json();
-    setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
-    showToast(`Category "${updated.name}" updated!`);
-    return updated;
-  };
-
-  // Handle Delete Category
-  const handleDeleteCategory = async (id: string) => {
-    const res = await authFetch(`/api/categories/${id}`, {
-      method: 'DELETE',
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok) {
-      let errorMsg = 'Failed to delete category';
-      if (contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({}));
-        errorMsg = errData.error || errorMsg;
-      }
-      throw new Error(errorMsg);
-    }
-
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    setCurrentDateLogs((prev) => prev.filter((l) => l.category_id !== id));
-    setAllLogs((prev) => prev.filter((l) => l.category_id !== id));
-    showToast('Category deleted and associated logs cleaned up');
-  };
-
-  // Handle Delete Log
-  const handleDeleteLog = async (id: string) => {
     try {
-      const res = await authFetch(`/api/logs/${id}`, {
-        method: 'DELETE',
+      const category_id = formData.get('category_id') as string;
+      const log_date = formData.get('log_date') as string;
+      const notes = formData.get('notes') as string || '';
+      
+      // Grab the raw File object from the form
+      const photoFile = formData.get('photo') as File | null;
+      
+      const logId = crypto.randomUUID();
+      
+      await db.transaction('rw', db.dailyLogs, db.syncQueue, async () => {
+        await db.dailyLogs.put({
+          id: logId,
+          log_date,
+          category_id,
+          notes,
+          status: 'present',
+          local_photo: photoFile || undefined, // Store the raw file directly in Dexie!
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as any); // Using 'as any' temporarily so we don't have to rewrite types.ts just yet
+        
+        await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'upsert', timestamp: Date.now() });
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to delete log');
-      }
+      setIsLogModalOpen(false);
+      showToast('Activity log & photo saved locally!');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save log', 'error');
+    }
+  };
 
-      setCurrentDateLogs((prev) => prev.filter((l) => l.id !== id));
-      setAllLogs((prev) => prev.filter((l) => l.id !== id));
+  const handleAddCategory = async (newCat: { name: string; color_code: string; icon: string; reminder_time?: string | null }) => {
+    try {
+      const newId = crypto.randomUUID();
+      const categoryToSave = { ...newCat, id: newId, is_active: true } as Category;
+      
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        await db.categories.put(categoryToSave);
+        await db.syncQueue.put({ id: newId, table: 'categories', action: 'upsert', timestamp: Date.now() });
+      });
+      
+      showToast(`Category "${newCat.name}" created!`);
+      return categoryToSave;
+    } catch (err) {
+      console.error(err);
+      throw new Error('Failed to create category');
+    }
+  };
+
+  const handleUpdateCategory = async (id: string, updates: Partial<Category>) => {
+    try {
+      let updatedCat: Category | undefined;
+      
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        const existing = await db.categories.get(id);
+        if (!existing) throw new Error('Category not found');
+        
+        updatedCat = { ...existing, ...updates };
+        await db.categories.put(updatedCat);
+        await db.syncQueue.put({ id, table: 'categories', action: 'upsert', timestamp: Date.now() });
+      });
+      
+      showToast(`Category updated!`);
+      return updatedCat as Category;
+    } catch (err) {
+      console.error(err);
+      throw new Error('Failed to update category');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      await db.transaction('rw', db.categories, db.dailyLogs, db.syncQueue, async () => {
+        await db.categories.delete(id);
+        await db.syncQueue.put({ id, table: 'categories', action: 'delete', timestamp: Date.now() });
+
+        const logsToDelete = await db.dailyLogs.where('category_id').equals(id).toArray();
+        const logIds = logsToDelete.map(l => l.id);
+        
+        if (logIds.length > 0) {
+          await db.dailyLogs.bulkDelete(logIds);
+          for (const logId of logIds) {
+            await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'delete', timestamp: Date.now() });
+          }
+        }
+      });
+      
+      showToast('Category and associated logs deleted');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete category', 'error');
+    }
+  };
+
+  const handleDeleteLog = async (id: string) => {
+    try {
+      await db.transaction('rw', db.dailyLogs, db.syncQueue, async () => {
+        await db.dailyLogs.delete(id);
+        await db.syncQueue.put({ id, table: 'daily_logs', action: 'delete', timestamp: Date.now() });
+      });
       showToast('Activity log deleted');
-    } catch (err: any) {
-      console.error('Delete error:', err);
+    } catch (err) {
+      console.error(err);
       showToast('Failed to delete activity log', 'error');
     }
   };
 
-  // Auth Handlers
+  // Auth Handlers (Legacy)
   const handleAuthenticated = (token: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, token);
     document.cookie = `session_token=${token}; path=/; max-age=604800; SameSite=Lax`;
@@ -349,11 +273,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    try {
-      await authFetch('/api/auth/logout', { method: 'POST' });
-    } catch (e) {
-      // ignore
-    }
+    try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
     localStorage.removeItem(AUTH_TOKEN_KEY);
     document.cookie = 'session_token=; path=/; max-age=0; SameSite=Lax';
     setAuthToken(null);
@@ -362,7 +282,6 @@ export default function App() {
     showToast('Dashboard locked');
   };
 
-  // Calculate log counts per date for dot indicators in day selector
   const logCountsByDate = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const log of allLogs) {
@@ -371,7 +290,6 @@ export default function App() {
     return counts;
   }, [allLogs]);
 
-  // Loading security check
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center text-white">
@@ -381,12 +299,6 @@ export default function App() {
     );
   }
 
-  // If unauthenticated or accessing /login, render the Auth checkpoint screen
-  if (!isAuthenticated || window.location.pathname === '/login') {
-    return <AuthScreen isSetup={isAuthSetup} onAuthenticated={handleAuthenticated} />;
-  }
-
-  // Deep Link Routing: Quick Log check-in from push notification
   if (window.location.pathname.replace(/\/$/, '') === '/quick-log') {
     const params = new URLSearchParams(window.location.search);
     const quickLogCategoryId = params.get('category_id');
@@ -395,15 +307,12 @@ export default function App() {
       return (
         <QuickLog
           categoryId={quickLogCategoryId}
-          authFetch={authFetch}
           onClose={() => {
-            fetchLogs(selectedDate); // refresh logs
             setForceRender(prev => prev + 1);
           }}
         />
       );
     } else {
-      // Missing category_id, gracefully degrade to dashboard
       window.history.replaceState(null, '', '/');
       setForceRender(prev => prev + 1);
     }
@@ -411,12 +320,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-12 relative overflow-x-hidden">
-      {/* Ambient frosted glass background blur orbs */}
       <div className="fixed top-[-80px] left-[-80px] w-96 h-96 bg-blue-300/25 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed top-1/3 right-[-100px] w-[28rem] h-[28rem] bg-indigo-300/20 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed bottom-[-60px] left-1/4 w-96 h-96 bg-sky-200/25 rounded-full blur-3xl pointer-events-none -z-10" />
 
-      {/* 1. Header Bar with Navigation, Schema Modal, Notification Toggle & Logout/Lock */}
       <Header
         currentView={currentView}
         onViewChange={setCurrentView}
@@ -428,21 +335,17 @@ export default function App() {
         onToast={showToast}
       />
 
-      {/* 2. Main Content Viewport */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:px-6 space-y-4">
         {currentView === 'dashboard' ? (
           <div className="space-y-4">
-            {/* Horizontal Day Selector Strip */}
             <DaySelector
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               logCountsByDate={logCountsByDate}
             />
-
-            {/* Activity Feed for the Selected Day */}
             <ActivityFeed
               logs={currentDateLogs}
-              isLoading={isLoadingLogs}
+              isLoading={false} // Local DB is instant!
               selectedDate={selectedDate}
               onOpenNewLog={() => setIsLogModalOpen(true)}
               onDeleteLog={handleDeleteLog}
@@ -450,30 +353,25 @@ export default function App() {
             />
           </div>
         ) : (
-          /* Reports View */
           <ReportsView
             logs={allLogs}
             categories={categories}
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
-            isLoading={isLoadingLogs}
+            isLoading={false}
           />
         )}
       </main>
 
-      {/* 3. Floating Action Button (FAB) in Bottom-Right */}
       <div className="fixed bottom-6 right-6 z-40">
         <button
-          id="btn-fab-add-log"
           onClick={() => setIsLogModalOpen(true)}
-          aria-label="Add new log"
           className="w-14 h-14 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all group focus:outline-none focus:ring-4 focus:ring-blue-500/30"
         >
           <Plus className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
         </button>
       </div>
 
-      {/* 4. Log Modal Overlay */}
       <LogModal
         isOpen={isLogModalOpen}
         onClose={() => setIsLogModalOpen(false)}
@@ -488,7 +386,6 @@ export default function App() {
         }}
       />
 
-      {/* 5. Category Manager Modal */}
       <CategoryManagerModal
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
@@ -498,34 +395,18 @@ export default function App() {
         onDeleteCategory={handleDeleteCategory}
       />
 
-      {/* 6. Photo Lightbox Modal */}
       <PhotoLightbox
         url={lightboxPhoto?.url || null}
         title={lightboxPhoto?.title}
         onClose={() => setLightboxPhoto(null)}
       />
 
-      {/* 7. Vercel Architecture & SQL Schema Inspector */}
-      <VercelSchemaModal
-        isOpen={isSchemaModalOpen}
-        onClose={() => setIsSchemaModalOpen(false)}
-      />
+      <VercelSchemaModal isOpen={isSchemaModalOpen} onClose={() => setIsSchemaModalOpen(false)} />
 
-      {/* 8. Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-semibold backdrop-blur-md ${
-              toastMessage.type === 'success'
-                ? 'bg-neutral-900/90 text-white border-neutral-800'
-                : 'bg-red-900/90 text-white border-red-800'
-            }`}
-          >
-            {toastMessage.type === 'success' ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-            ) : (
-              <AlertCircle className="w-3.5 h-3.5 text-red-400" />
-            )}
+          <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-semibold backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-neutral-900/90 text-white border-neutral-800' : 'bg-red-900/90 text-white border-red-800'}`}>
+            {toastMessage.type === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
             <span>{toastMessage.text}</span>
           </div>
         </div>

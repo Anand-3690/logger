@@ -19,8 +19,11 @@ export interface DailyLog {
   category_id: string;
   notes?: string | null;
   photo_url?: string | null;
+  photo_storage_path?: string | null;
   status?: 'present' | 'absent';
   created_at: string; // ISO timestamp
+  updated_at?: string; // Added for sync engine conflict resolution
+  local_photo?: File;  // Added for offline-first blob storage
   category?: Category;
 }
 
