@@ -9,9 +9,9 @@ import { ReportsView } from './components/ReportsView';
 import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
-import { NotificationSettingsCard } from './components/NotificationSettingsCard';
 import { QuickLog } from './components/QuickLog';
 import { registerServiceWorker } from './utils/pushNotifications';
+import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
 import { Plus, Check, AlertCircle, Loader2 } from 'lucide-react';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
@@ -29,13 +29,13 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
 
-  // Default to today's date in local time or ISO format (e.g. 2026-08-24)
+  // Default to today's date in local calendar time (e.g. 2026-08-25)
   const todayStr = useMemo(() => {
-    return new Date().toISOString().split('T')[0];
+    return getTodayLocalDate();
   }, []);
 
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
-  const [selectedMonth, setSelectedMonth] = useState<string>(todayStr.substring(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentLocalMonth());
 
   // Data States
   const [categories, setCategories] = useState<Category[]>([]);
@@ -143,8 +143,10 @@ export default function App() {
         localStorage.removeItem(AUTH_TOKEN_KEY);
         setAuthToken(null);
         setIsAuthenticated(false);
-        window.history.replaceState(null, '', '/login');
-        showToast('Session expired or invalid. Please sign in.', 'error');
+        if (window.location.pathname !== '/login') {
+          window.history.replaceState(null, '', '/login');
+          showToast('Session expired or invalid. Please sign in.', 'error');
+        }
       }
       return response;
     },
@@ -214,12 +216,22 @@ export default function App() {
       body: formData,
     });
 
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to save log');
+      let errorMsg = 'Failed to save log';
+      if (contentType.includes('application/json')) {
+        const errData = await res.json().catch(() => ({}));
+        errorMsg = errData.error || errorMsg;
+      } else {
+        const text = await res.text().catch(() => '');
+        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
+      }
+      throw new Error(errorMsg);
     }
 
-    const savedLog: DailyLog = await res.json();
+    if (contentType.includes('application/json')) {
+      await res.json().catch(() => ({}));
+    }
     await fetchLogs(selectedDate);
     showToast('Activity log saved successfully!');
   };
@@ -237,9 +249,17 @@ export default function App() {
       body: JSON.stringify(newCat),
     });
 
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to create category');
+      let errorMsg = 'Failed to create category';
+      if (contentType.includes('application/json')) {
+        const errData = await res.json().catch(() => ({}));
+        errorMsg = errData.error || errorMsg;
+      } else {
+        const text = await res.text().catch(() => '');
+        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
+      }
+      throw new Error(errorMsg);
     }
 
     const created: Category = await res.json();
@@ -256,9 +276,17 @@ export default function App() {
       body: JSON.stringify(updates),
     });
 
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to update category');
+      let errorMsg = 'Failed to update category';
+      if (contentType.includes('application/json')) {
+        const errData = await res.json().catch(() => ({}));
+        errorMsg = errData.error || errorMsg;
+      } else {
+        const text = await res.text().catch(() => '');
+        errorMsg = text && text.length < 150 ? text : `Server returned error (${res.status})`;
+      }
+      throw new Error(errorMsg);
     }
 
     const updated: Category = await res.json();
@@ -273,9 +301,14 @@ export default function App() {
       method: 'DELETE',
     });
 
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to delete category');
+      let errorMsg = 'Failed to delete category';
+      if (contentType.includes('application/json')) {
+        const errData = await res.json().catch(() => ({}));
+        errorMsg = errData.error || errorMsg;
+      }
+      throw new Error(errorMsg);
     }
 
     setCategories((prev) => prev.filter((c) => c.id !== id));
@@ -377,8 +410,13 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-12">
-      {/* 1. Header Bar with Navigation, Schema Modal & Logout/Lock */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-12 relative overflow-x-hidden">
+      {/* Ambient frosted glass background blur orbs */}
+      <div className="fixed top-[-80px] left-[-80px] w-96 h-96 bg-blue-300/25 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="fixed top-1/3 right-[-100px] w-[28rem] h-[28rem] bg-indigo-300/20 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="fixed bottom-[-60px] left-1/4 w-96 h-96 bg-sky-200/25 rounded-full blur-3xl pointer-events-none -z-10" />
+
+      {/* 1. Header Bar with Navigation, Schema Modal, Notification Toggle & Logout/Lock */}
       <Header
         currentView={currentView}
         onViewChange={setCurrentView}
@@ -386,18 +424,14 @@ export default function App() {
         onOpenSchema={() => setIsSchemaModalOpen(true)}
         onOpenCategories={() => setIsCategoryManagerOpen(true)}
         onLogout={handleLogout}
+        authToken={authToken}
+        onToast={showToast}
       />
 
       {/* 2. Main Content Viewport */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:px-6 space-y-4">
         {currentView === 'dashboard' ? (
           <div className="space-y-4">
-            {/* Scheduled Push Notifications Settings Card */}
-            <NotificationSettingsCard
-              authToken={authToken}
-              onRefreshLogs={() => fetchLogs(selectedDate)}
-            />
-
             {/* Horizontal Day Selector Strip */}
             <DaySelector
               selectedDate={selectedDate}

@@ -1,63 +1,164 @@
-import React, { useState } from 'react';
-import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface VercelSchemaModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface DbStatus {
+  isCloudConnected: boolean;
+  connectionType: string;
+  cloudProvider: string;
+  lastError: string | null;
+  categoryCount: number;
+  logCount: number;
+  pushSubscriptionCount: number;
+  envConfigured?: {
+    hasSupabaseUrl: boolean;
+    hasSupabaseKey: boolean;
+    hasDatabaseUrl: boolean;
+  };
+}
+
 export const VercelSchemaModal: React.FC<VercelSchemaModalProps> = ({ isOpen, onClose }) => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'sql' | 'cron' | 'service_worker' | 'vercel_json'>('sql');
+  const [activeTab, setActiveTab] = useState<'sql' | 'supabase_sql' | 'cron' | 'service_worker' | 'vercel_json'>('supabase_sql');
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  const fetchStatus = () => {
+    fetch('/api/db/status')
+      .then((res) => res.json())
+      .then((data) => setDbStatus(data))
+      .catch((err) => console.error('Failed to fetch DB status', err));
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchStatus();
+    }
+  }, [isOpen]);
+
+  const handlePushToCloud = async () => {
+    try {
+      setIsPushing(true);
+      setSyncMessage(null);
+      const res = await fetch('/api/db/sync-push', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncMessage({
+          type: 'success',
+          text: `Pushed successfully to Supabase! (${data.categoriesSynced} categories, ${data.logsSynced} logs)`,
+        });
+        fetchStatus();
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: `Push notice: ${data.errors?.join('; ') || data.error || 'Check database connection'}`,
+        });
+      }
+    } catch (err: any) {
+      setSyncMessage({
+        type: 'error',
+        text: `Push error: ${err.message || String(err)}`,
+      });
+    } finally {
+      setIsPushing(false);
+      setTimeout(() => setSyncMessage(null), 6000);
+    }
+  };
+
+  const handleSyncPull = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncMessage(null);
+      const res = await fetch('/api/db/sync', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setDbStatus(data);
+        setSyncMessage({
+          type: 'success',
+          text: `Pulled from Cloud: ${data.categoryCount} categories, ${data.logCount} logs active.`,
+        });
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: `Pull failed: ${data.error || 'Could not reach cloud database'}`,
+        });
+      }
+    } catch (err: any) {
+      setSyncMessage({
+        type: 'error',
+        text: `Sync error: ${err.message || String(err)}`,
+      });
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncMessage(null), 5000);
+    }
+  };
 
   if (!isOpen) return null;
 
-  const sqlCode = `-- ===================================================
--- POSTGRESQL SCHEMA (@vercel/postgres)
--- Upgraded with reminder_time & push_subscriptions
+  const supabaseSqlCode = `-- ===================================================
+-- SUPABASE / POSTGRESQL PRODUCTION SCHEMA
+-- Paste into Supabase SQL Editor and click RUN
 -- ===================================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Table 1: Categories (with reminder_time TIME)
+-- 1. Categories Table
 CREATE TABLE IF NOT EXISTS categories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL,
-  color_code VARCHAR(50) NOT NULL,
-  icon VARCHAR(50) NOT NULL,
-  reminder_time TIME,
-  is_active BOOLEAN DEFAULT true
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  color_code TEXT NOT NULL DEFAULT '#3b82f6',
+  icon TEXT NOT NULL DEFAULT 'Brain',
+  reminder_time TIME WITHOUT TIME ZONE DEFAULT '20:00:00',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table 2: Daily Logs
+-- 2. Daily Logs Table
 CREATE TABLE IF NOT EXISTS daily_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   log_date DATE NOT NULL,
   category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
   notes TEXT,
-  photo_url VARCHAR(1024),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  status TEXT DEFAULT 'present',
+  photo_url TEXT,
+  photo_data TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(log_date, category_id)
 );
 
--- Table 3: Web Push Subscriptions
+-- 3. Web Push Subscriptions Table
 CREATE TABLE IF NOT EXISTS push_subscriptions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  subscription_json JSONB NOT NULL,
+  id TEXT PRIMARY KEY,
+  endpoint TEXT,
+  subscription_json TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for performance
+-- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_daily_logs_category ON daily_logs(category_id);
-CREATE INDEX IF NOT EXISTS idx_categories_reminder_time ON categories(reminder_time);
+CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(is_active);
 
--- Seed Initial Categories
-INSERT INTO categories (id, name, color_code, icon, reminder_time, is_active)
-VALUES 
-  ('11111111-1111-1111-1111-111111111111', 'Deep Work', '#3b82f6', 'Brain', '09:00:00', true),
-  ('22222222-2222-2222-2222-222222222222', 'Fitness', '#22c55e', 'Dumbbell', '18:30:00', true),
-  ('33333333-3333-3333-3333-333333333333', 'Guru Prasangs & Texts', '#f97316', 'BookOpen', '20:30:00', true)
-ON CONFLICT (id) DO NOTHING;`;
+-- Enable Row Level Security (RLS) & Grant Access to Anon and Authenticated Roles
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow all access to categories" ON categories;
+CREATE POLICY "Allow all access to categories" ON categories FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all access to daily_logs" ON daily_logs;
+CREATE POLICY "Allow all access to daily_logs" ON daily_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all access to push_subscriptions" ON push_subscriptions;
+CREATE POLICY "Allow all access to push_subscriptions" ON push_subscriptions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);`;
+
+  const sqlCode = supabaseSqlCode;
 
   const cronRouteCode = `// app/api/cron/notify/route.ts
 // Triggered every minute by Vercel Cron Jobs
@@ -192,8 +293,9 @@ self.addEventListener('notificationclick', (event) => {
 
   const getActiveCode = () => {
     switch (activeTab) {
+      case 'supabase_sql':
       case 'sql':
-        return sqlCode;
+        return supabaseSqlCode;
       case 'cron':
         return cronRouteCode;
       case 'service_worker':
@@ -204,46 +306,107 @@ self.addEventListener('notificationclick', (event) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-neutral-900/60 backdrop-blur-xs transition-opacity">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-md transition-opacity animate-in fade-in duration-200">
       <div
         id="modal-vercel-schema"
-        className="bg-neutral-900 text-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-neutral-800 flex flex-col max-h-[90vh]"
+        className="glass-dark text-white rounded-3xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
+        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-white/5 backdrop-blur-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs ring-1 ring-white/20">
               <Database className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white leading-tight">
-                Vercel Postgres & PWA Push Architecture
-              </h3>
-              <p className="text-xs text-neutral-400 font-medium">
-                SQL schema, Cron Job endpoint, and Service Worker specifications
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white leading-tight">
+                  Database & Supabase Sync
+                </h3>
+                {dbStatus?.isCloudConnected ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <CheckCircle2 className="w-3 h-3" /> {dbStatus.cloudProvider}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <AlertCircle className="w-3 h-3" /> Local Server Storage (.data/app_data.json)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-neutral-400 font-medium mt-0.5">
+                {dbStatus?.categoryCount ?? 0} active categories · {dbStatus?.logCount ?? 0} activity logs stored
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Sync Controls Banner */}
+        <div className="px-5 py-3 bg-neutral-900/90 border-b border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="text-neutral-300">
+            {dbStatus?.isCloudConnected ? (
+              <span className="text-emerald-400 font-medium">✓ Remote Supabase synchronization is active for new logs and updates.</span>
+            ) : (
+              <span className="text-amber-300 font-medium">
+                Storage: Logs are persisting in the local server state. Set <code className="bg-black/40 px-1 py-0.5 rounded text-amber-200">SUPABASE_URL</code> in environment to sync to cloud.
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePushToCloud}
+              disabled={isPushing || isSyncing}
+              title="Push all local categories and logs into Supabase tables"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-xs transition-colors disabled:opacity-50"
+            >
+              <CloudUpload className={`w-3.5 h-3.5 ${isPushing ? 'animate-bounce' : ''}`} />
+              <span>{isPushing ? 'Pushing Data...' : 'Push Local Data to Supabase'}</span>
+            </button>
+            <button
+              onClick={handleSyncPull}
+              disabled={isSyncing || isPushing}
+              title="Pull latest data from Supabase/Postgres"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-medium border border-neutral-700 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-400' : ''}`} />
+              <span>{isSyncing ? 'Pulling...' : 'Pull from Cloud'}</span>
+            </button>
+          </div>
+        </div>
+
+        {syncMessage && (
+          <div className={`px-5 py-2.5 border-b text-xs font-medium flex items-center gap-2 ${
+            syncMessage.type === 'success'
+              ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-300'
+              : 'bg-red-950/40 border-red-800/40 text-red-300'
+          }`}>
+            {syncMessage.type === 'success' ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            )}
+            <span>{syncMessage.text}</span>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex border-b border-neutral-800 px-5 pt-2 bg-neutral-950/30 gap-1 overflow-x-auto no-scrollbar">
           <button
-            onClick={() => setActiveTab('sql')}
+            onClick={() => setActiveTab('supabase_sql')}
             className={`px-3 py-2 text-xs font-semibold rounded-t-xl transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
-              activeTab === 'sql'
+              activeTab === 'supabase_sql'
                 ? 'text-blue-400 border-blue-500 bg-neutral-800/60'
                 : 'text-neutral-400 border-transparent hover:text-neutral-200'
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>PostgreSQL Schema (@vercel/postgres)</span>
+            <span>Supabase / Postgres SQL Schema</span>
           </button>
           <button
             onClick={() => setActiveTab('cron')}

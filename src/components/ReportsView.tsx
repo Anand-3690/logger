@@ -142,16 +142,40 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     };
   }, [logs, categories, selectedMonth]);
 
+  const [exportError, setExportError] = useState<string | null>(null);
+
   const handleDownloadPDF = async () => {
     try {
       setIsExportingPDF(true);
+      setExportError(null);
       const filename = `activity_report_${selectedMonth}.pdf`;
-      await exportReportToPDF('printable-monthly-report', filename);
+
+      const fallbackData = {
+        monthName,
+        totalLogs: stats.totalLogs,
+        activeDaysCount: stats.activeDaysCount,
+        daysInMonth: stats.daysInMonth,
+        photoCount: stats.photoCount,
+        topCategoryName: stats.topCategory?.name || 'None',
+        categories: stats.categoryBreakdown.map((item) => ({
+          name: item.category.name,
+          count: item.count,
+          percentage: item.percentage,
+        })),
+        logs: stats.filteredLogs.map((log) => ({
+          date: log.log_date,
+          categoryName: log.category?.name || 'Activity',
+          notes: log.notes,
+        })),
+      };
+
+      await exportReportToPDF('printable-monthly-report', filename, fallbackData);
       setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 3000);
-    } catch (err) {
+      setTimeout(() => setExportSuccess(false), 4000);
+    } catch (err: any) {
       console.error('PDF export failed:', err);
-      alert('Could not export PDF. Please try again.');
+      setExportError(err?.message || 'Could not generate PDF.');
+      setTimeout(() => setExportError(null), 5000);
     } finally {
       setIsExportingPDF(false);
     }
@@ -160,13 +184,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   return (
     <div className="space-y-5 pb-24">
       {/* Month Navigation & PDF Export Controls */}
-      <div className="bg-white rounded-2xl p-4 border border-neutral-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
+      <div className="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
         {/* Month Selector */}
         <div className="flex items-center gap-2">
           <button
             id="btn-report-prev-month"
             onClick={handlePrevMonth}
-            className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+            className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -179,14 +203,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <button
             id="btn-report-next-month"
             onClick={handleNextMonth}
-            className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+            className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
           <button
             id="btn-report-current-month"
             onClick={handleCurrentMonth}
-            className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition-colors ml-1"
+            className="text-xs font-semibold text-blue-700 hover:bg-blue-500/20 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg transition-colors ml-1"
           >
             Current Month
           </button>
@@ -197,7 +221,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           id="btn-download-monthly-pdf"
           onClick={handleDownloadPDF}
           disabled={isExportingPDF || isLoading}
-          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-neutral-900/20"
+          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900/90 hover:bg-neutral-900 backdrop-blur-md active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-neutral-900/20 border border-neutral-700/50"
         >
           {isExportingPDF ? (
             <>
@@ -218,17 +242,23 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </button>
       </div>
 
+      {exportError && (
+        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
+          <span className="font-bold">Notice:</span> {exportError}
+        </div>
+      )}
+
       {/* ============================================================ */}
       {/* PRINTABLE REPORT CONTAINER (Captured by html2canvas / jsPDF) */}
       {/* ============================================================ */}
       <div
         id="printable-monthly-report"
-        className="bg-white rounded-3xl p-5 sm:p-8 border border-neutral-200/90 shadow-sm space-y-6"
+        className="glass-modal rounded-3xl p-5 sm:p-8 space-y-6"
       >
         {/* Document Header for Export */}
-        <div className="border-b border-neutral-200 pb-5 flex flex-wrap items-start justify-between gap-4">
+        <div className="border-b border-neutral-200/80 pb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider mb-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-700 text-xs font-bold uppercase tracking-wider mb-2">
               <FileText className="w-3.5 h-3.5" />
               Monthly Activity Report
             </div>
@@ -247,7 +277,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
         {/* 4 Summary Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/70 flex flex-col justify-between">
+          <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Total Logs</span>
               <Activity className="w-4 h-4 text-blue-600" />
@@ -260,7 +290,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
-          <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/70 flex flex-col justify-between">
+          <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Active Days</span>
               <Calendar className="w-4 h-4 text-emerald-600" />
@@ -273,7 +303,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
-          <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/70 flex flex-col justify-between">
+          <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Top Focus</span>
               <Award className="w-4 h-4 text-amber-500" />
@@ -286,7 +316,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
-          <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/70 flex flex-col justify-between">
+          <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Photos Logged</span>
               <ImageIcon className="w-4 h-4 text-purple-600" />
@@ -301,7 +331,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
 
         {/* Category Breakdown & Visual Bar Chart */}
-        <div className="bg-neutral-50/70 rounded-2xl p-4 sm:p-6 border border-neutral-200/80 space-y-4">
+        <div className="glass-panel-subtle rounded-2xl p-4 sm:p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-blue-600" />

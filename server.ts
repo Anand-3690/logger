@@ -145,7 +145,7 @@ async function startServer() {
   });
 
   // 1. GET /api/categories - Fetch all active categories
-  app.get('/api/categories', (req: Request, res: Response) => {
+  app.get('/api/categories', async (req: Request, res: Response) => {
     try {
       const categories = db.getActiveCategories();
       res.json(categories);
@@ -156,13 +156,13 @@ async function startServer() {
   });
 
   // POST /api/categories - Add a new category with optional reminder_time
-  app.post('/api/categories', (req: Request, res: Response) => {
+  app.post('/api/categories', async (req: Request, res: Response) => {
     try {
       const { name, color_code, icon, reminder_time } = req.body;
       if (!name || !name.trim()) {
         return res.status(400).json({ error: 'Category name is required' });
       }
-      const newCategory = db.createCategory({
+      const newCategory = await db.createCategory({
         name: name.trim(),
         color_code: color_code || '#3b82f6',
         icon: icon || 'Sparkles',
@@ -176,11 +176,11 @@ async function startServer() {
   });
 
   // PUT /api/categories/:id - Update category with optional reminder_time
-  app.put('/api/categories/:id', (req: Request, res: Response) => {
+  app.put('/api/categories/:id', async (req: Request, res: Response) => {
     try {
       const id = req.params.id;
       const { name, color_code, icon, reminder_time, is_active } = req.body;
-      const updated = db.updateCategory(id, { name, color_code, icon, reminder_time, is_active });
+      const updated = await db.updateCategory(id, { name, color_code, icon, reminder_time, is_active });
       if (!updated) {
         return res.status(404).json({ error: 'Category not found' });
       }
@@ -192,10 +192,10 @@ async function startServer() {
   });
 
   // DELETE /api/categories/:id - Delete / deactivate category
-  app.delete('/api/categories/:id', (req: Request, res: Response) => {
+  app.delete('/api/categories/:id', async (req: Request, res: Response) => {
     try {
       const id = req.params.id;
-      const success = db.deleteCategory(id);
+      const success = await db.deleteCategory(id);
       if (success) {
         res.json({ message: 'Category deleted successfully' });
       } else {
@@ -264,7 +264,7 @@ async function startServer() {
         photo_url = await uploadBase64Photo(req.body.photo_base64);
       }
 
-      const newLog = db.createLog({
+      const newLog = await db.createLog({
         log_date,
         category_id,
         notes: notes || null,
@@ -279,11 +279,51 @@ async function startServer() {
     }
   });
 
+  // PUT /api/logs/:id - Update or replace a log
+  app.put('/api/logs/:id', upload.single('photo'), async (req: Request, res: Response) => {
+    try {
+      let { log_date, category_id, notes, photo_url_input, status } = req.body;
+
+      if (!log_date) {
+        log_date = new Date().toISOString().split('T')[0];
+      }
+
+      if (!category_id) {
+        const activeCats = db.getActiveCategories();
+        if (activeCats.length > 0) {
+          category_id = activeCats[0].id;
+        } else {
+          return res.status(400).json({ error: 'category_id is required' });
+        }
+      }
+
+      let photo_url: string | null = photo_url_input || null;
+      if (req.file) {
+        photo_url = await uploadPhotoFile(req.file);
+      } else if (req.body.photo_base64) {
+        photo_url = await uploadBase64Photo(req.body.photo_base64);
+      }
+
+      const updatedLog = await db.createLog({
+        log_date,
+        category_id,
+        notes: notes || null,
+        photo_url,
+        status: status === 'absent' ? 'absent' : 'present',
+      });
+
+      res.json(updatedLog);
+    } catch (err: any) {
+      console.error('Error updating log:', err);
+      res.status(500).json({ error: err.message || 'Failed to update log' });
+    }
+  });
+
   // DELETE /api/logs/:id - Delete a log
-  app.delete('/api/logs/:id', (req: Request, res: Response) => {
+  app.delete('/api/logs/:id', async (req: Request, res: Response) => {
     try {
       const id = req.params.id;
-      const success = db.deleteLog(id);
+      const success = await db.deleteLog(id);
       if (success) {
         res.json({ message: 'Log deleted successfully' });
       } else {
@@ -292,6 +332,35 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error deleting log:', err);
       res.status(500).json({ error: 'Failed to delete log' });
+    }
+  });
+
+  // Database Connection Status & Sync
+  app.get('/api/db/status', (req: Request, res: Response) => {
+    res.json(db.getStatus());
+  });
+
+  // Pull latest data from cloud DB
+  app.post('/api/db/sync', async (req: Request, res: Response) => {
+    try {
+      await db.syncFromPostgres();
+      res.json({ success: true, ...db.getStatus() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to sync database' });
+    }
+  });
+
+  // Push all local data to Supabase / PostgreSQL
+  app.post('/api/db/sync-push', async (req: Request, res: Response) => {
+    try {
+      const result = await db.pushAllToCloud();
+      res.json({
+        success: result.errors.length === 0,
+        ...result,
+        status: db.getStatus(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to push data to cloud' });
     }
   });
 
@@ -306,14 +375,14 @@ async function startServer() {
   });
 
   // POST /api/notifications/subscribe - Store user's browser push subscription
-  app.post('/api/notifications/subscribe', (req: Request, res: Response) => {
+  app.post('/api/notifications/subscribe', async (req: Request, res: Response) => {
     try {
       const subData = req.body.subscription || req.body;
       if (!subData || !subData.endpoint) {
         return res.status(400).json({ error: 'Valid push subscription object is required' });
       }
 
-      const saved = db.savePushSubscription(subData);
+      const saved = await db.savePushSubscription(subData);
       res.status(201).json({
         success: true,
         message: 'Push subscription registered successfully',
@@ -326,13 +395,13 @@ async function startServer() {
   });
 
   // POST /api/notifications/unsubscribe - Remove subscription
-  app.post('/api/notifications/unsubscribe', (req: Request, res: Response) => {
+  app.post('/api/notifications/unsubscribe', async (req: Request, res: Response) => {
     try {
       const { endpoint } = req.body;
       if (!endpoint) {
         return res.status(400).json({ error: 'Endpoint is required' });
       }
-      const removed = db.removePushSubscription(endpoint);
+      const removed = await db.removePushSubscription(endpoint);
       res.json({ success: removed });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to unsubscribe' });
@@ -425,6 +494,25 @@ async function startServer() {
     res.json({
       postgres_schema: POSTGRES_SCHEMA_SQL,
       postgres_seed: POSTGRES_SEED_SQL,
+    });
+  });
+
+  // Serve static files from public directory (icons, manifest, sw.js)
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
+  // Explicit API 404 handler: prevents any unmatched /api/* request from falling through to Vite's index.html
+  app.all('/api/*', (req: Request, res: Response) => {
+    res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
+  });
+
+  // Global error handler for API and server errors (always returns JSON)
+  app.use((err: any, req: Request, res: Response, next: any) => {
+    console.error('[Server Error Handler]', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || err.statusCode || 500).json({
+      error: err.message || 'Internal Server Error',
     });
   });
 

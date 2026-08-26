@@ -116,6 +116,8 @@ export function authMiddleware(req: Request, res: ExpressResponse, next: NextFun
   // 3. Allow public auth API endpoints, health checks, cron notify, and public notification helpers
   if (
     pathname === '/api/health' ||
+    pathname === '/api/db/status' ||
+    pathname === '/api/db/sync' ||
     pathname.startsWith('/api/auth/') ||
     pathname === '/api/cron/notify' ||
     pathname === '/api/cron/status' ||

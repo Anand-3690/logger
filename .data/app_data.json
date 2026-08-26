@@ -1,0 +1,71 @@
+{
+  "categories": [
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Guru Prasangs & Texts",
+      "color_code": "#f97316",
+      "icon": "BookOpen",
+      "reminder_time": "20:00",
+      "is_active": true
+    },
+    {
+      "id": "6b4d65b1-ff51-4e85-a956-43d862a24ab6",
+      "name": "aarti",
+      "color_code": "#8b5cf6",
+      "icon": "Sparkles",
+      "reminder_time": null,
+      "is_active": true
+    }
+  ],
+  "logs": [
+    {
+      "id": "0619112c-0f35-4a1c-b8c2-30630cbc09d1",
+      "log_date": "2026-08-24",
+      "category_id": "33333333-3333-3333-3333-333333333333",
+      "notes": "Read Vachanamrut Gadhada I-1 regarding controlling thoughts and daily reflection during contemplation.",
+      "photo_url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80",
+      "created_at": "2026-08-24T19:45:00.000Z"
+    },
+    {
+      "id": "ad6165b7-2e87-48b2-a6d4-051f4c1c9c07",
+      "log_date": "2026-08-22",
+      "category_id": "33333333-3333-3333-3333-333333333333",
+      "notes": "Evening reading from Swamini Vato on sincerity, humility, and maintaining positive perspective.",
+      "photo_url": null,
+      "created_at": "2026-08-22T20:10:00.000Z"
+    }
+  ],
+  "push_subscriptions": [],
+  "auth": {
+    "password_hash": "a931b41aa12bac188911aa122b027723ffe99a4545aa738730c244aef696944b",
+    "salt": "6dbe5b0b60562efc522893d3aa649275",
+    "session_tokens": [
+      {
+        "token": "5cffee07a890f5601899d26c660eb07d796fbff9644e77c7def92ca1e7c522e3",
+        "expires_at": 1788260338871,
+        "created_at": "2026-08-25T10:58:58.871Z"
+      },
+      {
+        "token": "6c7e8561d38593da600437c5467751342299a36bb67a6a7ffd395ff8c9a6b422",
+        "expires_at": 1788261802425,
+        "created_at": "2026-08-25T11:23:22.425Z"
+      },
+      {
+        "token": "e1d8c9374e8894a2d2711c0eb9606799c440cb469c14490b777a9e2a1aeeea53",
+        "expires_at": 1788268118651,
+        "created_at": "2026-08-25T13:08:38.651Z"
+      },
+      {
+        "token": "ba69364c82c099dfeaeafa1f0d4217f98001f6c608f3d38934e597305ba6e659",
+        "expires_at": 1788278250179,
+        "created_at": "2026-08-25T15:57:30.179Z"
+      },
+      {
+        "token": "aee4d21d13ef8dfa7acbbf2a71938224c729313f545b8ec8d43455c0848124d0",
+        "expires_at": 1788278253867,
+        "created_at": "2026-08-25T15:57:33.867Z"
+      }
+    ],
+    "configured": true
+  }
+}

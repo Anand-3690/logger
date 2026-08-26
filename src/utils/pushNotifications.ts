@@ -83,9 +83,22 @@ export async function subscribeToWebPush(authToken?: string | null): Promise<Pus
   }
 
   // 1. Request browser permission
-  const permission = await Notification.requestPermission();
+  if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+    throw new Error('Notification permission is blocked in your browser settings. Please enable notifications for this site in your browser permissions.');
+  }
+
+  let permission: NotificationPermission = 'default';
+  try {
+    permission = await Notification.requestPermission();
+  } catch (permErr) {
+    console.warn('[PWA] Permission request error:', permErr);
+  }
+
+  if (permission === 'denied') {
+    throw new Error('Notification permission was blocked. Please enable notifications in your browser settings.');
+  }
   if (permission !== 'granted') {
-    throw new Error('Notification permission was denied or dismissed.');
+    throw new Error('Notification prompt was dismissed. Please allow notifications when prompted.');
   }
 
   // 2. Register / wait for service worker ready

@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/vite": "^4.1.14",
     "@types/multer": "^2.2.0",
+    "@types/pg": "^8.23.1",
     "@types/uuid": "^11.0.0",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^5.0.4",
@@ -23,8 +25,10 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",
+    "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "sharp": "^0.35.3",
     "uuid": "^14.0.2",
     "vite": "^6.2.3",
     "web-push": "^3.6.7"

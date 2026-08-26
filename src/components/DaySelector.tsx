@@ -1,5 +1,12 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import {
+  formatLocalDate,
+  getTodayLocalDate,
+  parseLocalDate,
+  formatLongDate,
+  addDaysToDate,
+} from '../utils/dateUtils';
 
 interface DaySelectorProps {
   selectedDate: string; // YYYY-MM-DD
@@ -14,12 +21,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Parse current selected date
-  const selectedDateObj = useMemo(() => {
-    return new Date(selectedDate + 'T00:00:00');
-  }, [selectedDate]);
-
-  // Generate a window of 14 days around the selected date (7 days before, 7 days after)
+  // Generate a window of 15 days around the selected date (7 days before, 7 days after)
   const days = useMemo(() => {
     const list: {
       dateStr: string;
@@ -30,17 +32,14 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
       isSelected: boolean;
     }[] = [];
 
-    // Reference today
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    // Reference today in local time
+    const todayStr = getTodayLocalDate();
 
-    // Find the Monday of the current selected week or generate a 14-day sliding range
-    const baseDate = new Date(selectedDateObj);
-    // Let's generate a 14-day window starting from 6 days ago up to 7 days ahead
+    // Generate days centered on selectedDate using local date math
     for (let i = -7; i <= 7; i++) {
-      const d = new Date(baseDate);
-      d.setDate(baseDate.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const d = parseLocalDate(selectedDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = formatLocalDate(d);
       const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
       const monthShort = d.toLocaleDateString('en-US', { month: 'short' });
@@ -56,7 +55,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
     }
 
     return list;
-  }, [selectedDate, selectedDateObj]);
+  }, [selectedDate]);
 
   // Center selected item in scroll container on change
   useEffect(() => {
@@ -71,38 +70,30 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
   }, [selectedDate]);
 
   const handlePrevDay = () => {
-    const prev = new Date(selectedDateObj);
-    prev.setDate(prev.getDate() - 1);
-    onSelectDate(prev.toISOString().split('T')[0]);
+    onSelectDate(addDaysToDate(selectedDate, -1));
   };
 
   const handleNextDay = () => {
-    const next = new Date(selectedDateObj);
-    next.setDate(next.getDate() + 1);
-    onSelectDate(next.toISOString().split('T')[0]);
+    onSelectDate(addDaysToDate(selectedDate, 1));
   };
 
   const handleToday = () => {
-    const today = new Date().toISOString().split('T')[0];
-    onSelectDate(today);
+    onSelectDate(getTodayLocalDate());
   };
 
   const formattedSelectedHeader = useMemo(() => {
-    return selectedDateObj.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }, [selectedDateObj]);
+    return formatLongDate(selectedDate);
+  }, [selectedDate]);
 
   return (
-    <div className="bg-white rounded-2xl p-3 sm:p-4 border border-neutral-200/80 shadow-xs mb-4">
+    <div className="glass-panel rounded-2xl p-3 sm:p-4 mb-4">
       {/* Header bar of Day Selector with Month & Jump Navigation */}
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
-          <CalendarDays className="w-4 h-4 text-blue-600" />
-          <h2 className="text-sm sm:text-base font-bold text-neutral-900">
+          <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 border border-blue-500/20">
+            <CalendarDays className="w-4 h-4" />
+          </div>
+          <h2 className="text-sm sm:text-base font-bold text-neutral-900 tracking-tight">
             {formattedSelectedHeader}
           </h2>
         </div>
@@ -111,7 +102,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
           <button
             id="btn-day-today"
             onClick={handleToday}
-            className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors"
           >
             Today
           </button>
@@ -119,7 +110,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
             id="btn-day-prev"
             onClick={handlePrevDay}
             title="Previous Day"
-            className="p-1 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+            className="p-1 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -127,7 +118,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
             id="btn-day-next"
             onClick={handleNextDay}
             title="Next Day"
-            className="p-1 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+            className="p-1 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -149,8 +140,8 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
               onClick={() => onSelectDate(item.dateStr)}
               className={`flex flex-col items-center justify-center min-w-[58px] sm:min-w-[64px] h-[74px] rounded-xl px-2 py-1.5 transition-all relative shrink-0 ${
                 item.isSelected
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-600 ring-offset-2'
-                  : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100/80 border border-neutral-200/60'
+                  ? 'bg-blue-600/95 backdrop-blur-md text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-500/60 ring-offset-2 ring-offset-white/80 border border-blue-400/40'
+                  : 'bg-white/50 backdrop-blur-md text-neutral-700 hover:bg-white/80 border border-white/80 hover:shadow-xs'
               }`}
             >
               <span
@@ -183,7 +174,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
 
               {/* Today marker pill */}
               {item.isToday && !item.isSelected && (
-                <span className="absolute -top-1 px-1.5 py-0.2 bg-neutral-800 text-[8px] font-bold text-white rounded-full">
+                <span className="absolute -top-1 px-1.5 py-0.2 bg-neutral-900/80 backdrop-blur-xs text-[8px] font-bold text-white rounded-full border border-white/20">
                   TODAY
                 </span>
               )}

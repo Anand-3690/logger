@@ -140,7 +140,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
   return (
     <div
       id="card-push-notifications"
-      className="bg-white rounded-3xl p-5 border border-neutral-200/90 shadow-sm space-y-4"
+      className="glass-panel rounded-3xl p-5 space-y-4"
     >
       {/* Header & Toggle */}
       <div className="flex items-start justify-between gap-4">
@@ -149,7 +149,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors shadow-xs ${
               status.isSubscribed
                 ? 'bg-blue-600 text-white shadow-blue-500/20'
-                : 'bg-neutral-100 text-neutral-600'
+                : 'bg-white/60 text-neutral-600 border border-white/60'
             }`}
           >
             {status.isSubscribed ? (
@@ -164,12 +164,12 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
                 Self-Managed Web Push & Scheduled Reminders
               </h3>
               {status.isSubscribed ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 border border-emerald-500/20">
                   <CheckCircle2 className="w-3 h-3" />
                   Active
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-100 text-neutral-600">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-200/50 text-neutral-600">
                   Disabled
                 </span>
               )}
