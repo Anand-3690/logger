@@ -15,7 +15,8 @@ import { QuickLog } from './components/QuickLog';
 import { registerServiceWorker } from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
 import { Plus, Check, AlertCircle, Loader2 } from 'lucide-react';
-import { processSyncQueue,pullFromCloud } from './syncEngine';
+import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine';
+import { resolvePhotoUrl } from './utils/photoUtils';
 import { useAuth } from './AuthContext';
 import { LoginScreen } from './LoginScreen';
 
@@ -54,19 +55,29 @@ export default function App() {
   
   const rawAllLogs = useLiveQuery(() => db.dailyLogs.toArray()) || [];
   
-  // 🚀 THE JOIN: Map the category data back onto the logs
+  // 🚀 THE JOIN: Map the category data and resolve photo URLs onto the logs
   const currentDateLogs = useMemo(() => {
-    return rawCurrentDateLogs.map(log => ({
-      ...log,
-      category: categories.find(c => c.id === log.category_id)
-    }));
+    return rawCurrentDateLogs.map(log => {
+      const resolvedPhoto = resolvePhotoUrl(log);
+      return {
+        ...log,
+        photo_url: resolvedPhoto || log.photo_url || null,
+        photo_storage_path: log.photo_storage_path || resolvedPhoto || null,
+        category: categories.find(c => c.id === log.category_id)
+      };
+    });
   }, [rawCurrentDateLogs, categories]);
 
   const allLogs = useMemo(() => {
-    return rawAllLogs.map(log => ({
-      ...log,
-      category: categories.find(c => c.id === log.category_id)
-    }));
+    return rawAllLogs.map(log => {
+      const resolvedPhoto = resolvePhotoUrl(log);
+      return {
+        ...log,
+        photo_url: resolvedPhoto || log.photo_url || null,
+        photo_storage_path: log.photo_storage_path || resolvedPhoto || null,
+        category: categories.find(c => c.id === log.category_id)
+      };
+    });
   }, [rawAllLogs, categories]);
 
   // Modals & UI States
@@ -87,10 +98,40 @@ export default function App() {
       if (reg) reg.update().catch(err => console.warn('SW update failed:', err));
     }).catch((err) => console.warn('Service worker registration failed:', err));
 
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
         window.history.pushState(null, '', event.data.url);
         setForceRender(prev => prev + 1);
+      } else if (event.data && event.data.type === 'RECORD_LOG' && event.data.data) {
+        try {
+          const { log_date, category_id, notes, status } = event.data.data;
+          const existing = category_id 
+            ? await db.dailyLogs.where({ log_date, category_id }).first()
+            : await db.dailyLogs.where({ log_date }).first();
+          
+          const now = new Date().toISOString();
+          const id = existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`);
+          const record: DailyLog = {
+            id,
+            log_date,
+            category_id: category_id || (categories[0]?.id || 'general'),
+            notes: notes || '',
+            status: status || 'present',
+            updated_at: now,
+            created_at: existing ? existing.created_at : now,
+          };
+          await db.dailyLogs.put(record);
+          await db.syncQueue.put({
+            id,
+            table: 'daily_logs',
+            action: 'upsert',
+            timestamp: Date.now(),
+          });
+          processSyncQueue();
+          showToast('Activity recorded from notification! ✅', 'success');
+        } catch (e) {
+          console.warn('Failed to record log from notification message:', e);
+        }
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleMessage);
@@ -98,26 +139,39 @@ export default function App() {
   }, []);
 
   // ==========================================
-  // SYNC ENGINE LISTENER
+  // SYNC ENGINE & REALTIME LISTENER
   // ==========================================
   useEffect(() => {
-    // Wrap our startup logic in an async function
     const performFullSync = async () => {
-      await pullFromCloud();    // 1. Pull down any new cloud data
+      await pullFromCloud();    // 1. Pull down any new/deleted cloud data
       await processSyncQueue(); // 2. Push up any pending local changes
     };
 
     // Run immediately on load
     performFullSync();
 
-    // Listen for the browser coming back online
+    // Setup Supabase Realtime channel for instant cross-device updates
+    const cleanupRealtime = setupRealtimeSync();
+
+    // Listen for browser coming back online or regaining focus/visibility
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        performFullSync();
+      }
+    };
+
     window.addEventListener('online', performFullSync);
+    window.addEventListener('focus', performFullSync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Poll the queue every 15 seconds as a fallback
-    const interval = setInterval(processSyncQueue, 15000);
+    // Poll the cloud every 10 seconds for seamless background synchronization
+    const interval = setInterval(performFullSync, 10000);
 
     return () => {
+      cleanupRealtime();
       window.removeEventListener('online', performFullSync);
+      window.removeEventListener('focus', performFullSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
   }, []);
@@ -155,10 +209,11 @@ export default function App() {
     try {
       const category_id = formData.get('category_id') as string;
       const log_date = formData.get('log_date') as string;
-      const notes = formData.get('notes') as string || '';
+      const notes = (formData.get('notes') as string) || '';
       
-      // Grab the raw File object from the form
+      // Grab the raw/compressed File object and data URL from the form
       const photoFile = formData.get('photo') as File | null;
+      const photoData = formData.get('photo_data') as string | null;
       
       const logId = crypto.randomUUID();
       
@@ -169,16 +224,20 @@ export default function App() {
           category_id,
           notes,
           status: 'present',
-          local_photo: photoFile || undefined, // Store the raw file directly in Dexie!
+          photo_url: photoData || null,
+          photo_data: photoData || null,
+          local_photo: photoFile || undefined,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        } as any); // Using 'as any' temporarily so we don't have to rewrite types.ts just yet
+          updated_at: new Date().toISOString(),
+        });
         
         await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'upsert', timestamp: Date.now() });
       });
 
       setIsLogModalOpen(false);
       showToast('Activity log & photo saved locally!');
+      // Kick off background sync immediately to upload photo & push to Supabase
+      processSyncQueue().catch(e => console.warn('Background sync failed:', e));
     } catch (err) {
       console.error(err);
       showToast('Failed to save log', 'error');
@@ -196,6 +255,7 @@ export default function App() {
       });
       
       showToast(`Category "${newCat.name}" created!`);
+      processSyncQueue().catch(e => console.warn('Background sync failed:', e));
       return categoryToSave;
     } catch (err) {
       console.error(err);
@@ -217,6 +277,7 @@ export default function App() {
       });
       
       showToast(`Category updated!`);
+      processSyncQueue().catch(e => console.warn('Background sync failed:', e));
       return updatedCat as Category;
     } catch (err) {
       console.error(err);
@@ -242,6 +303,7 @@ export default function App() {
       });
       
       showToast('Category and associated logs deleted');
+      processSyncQueue().catch(e => console.warn('Background sync failed:', e));
     } catch (err) {
       console.error(err);
       showToast('Failed to delete category', 'error');
@@ -255,6 +317,7 @@ export default function App() {
         await db.syncQueue.put({ id, table: 'daily_logs', action: 'delete', timestamp: Date.now() });
       });
       showToast('Activity log deleted');
+      processSyncQueue().catch(e => console.warn('Background sync failed:', e));
     } catch (err) {
       console.error(err);
       showToast('Failed to delete activity log', 'error');

@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { DailyLog, Category } from '../types';
 import { CategoryIcon } from './CategoryIcon';
+import { ActivityPhoto } from './ActivityPhoto';
+import { PhotoLightbox } from './PhotoLightbox';
+import { resolvePhotoUrl } from '../utils/photoUtils';
 import { exportReportToPDF } from '../utils/pdfExport';
 import {
   Download,
@@ -33,6 +36,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 }) => {
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
   const [exportSuccess, setExportSuccess] = useState<boolean>(false);
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
 
   // Month navigation helpers
   const monthDate = useMemo(() => {
@@ -80,7 +84,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     const activeDaysCount = activeDaysSet.size;
 
     // Photos count
-    const photoCount = filteredLogs.filter((l) => Boolean(l.photo_url)).length;
+    const photoCount = filteredLogs.filter((l) => Boolean(resolvePhotoUrl(l))).length;
 
     // Days in selected month
     const [y, m] = selectedMonth.split('-').map(Number);
@@ -185,24 +189,62 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     <div className="space-y-5 pb-24">
       {/* Month Navigation & PDF Export Controls */}
       <div className="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-        {/* Month Selector */}
-        <div className="flex items-center gap-2">
+        {/* Month Selector & Jump */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             id="btn-report-prev-month"
             onClick={handlePrevMonth}
+            title="Previous Month"
             className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2 px-2">
-            <Calendar className="w-4 h-4 text-blue-600" />
-            <span className="text-sm sm:text-base font-bold text-neutral-900">
-              {monthName}
-            </span>
+
+          {/* Month & Year Select Dropdowns */}
+          <div className="flex items-center gap-1.5 bg-white/70 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/80 shadow-2xs">
+            <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+            <select
+              id="select-report-month"
+              value={monthDate.getMonth()}
+              onChange={(e) => {
+                const newM = String(Number(e.target.value) + 1).padStart(2, '0');
+                const curY = selectedMonth.split('-')[0];
+                onMonthChange(`${curY}-${newM}`);
+              }}
+              className="text-xs sm:text-sm font-bold text-neutral-900 bg-transparent border-none outline-none cursor-pointer pr-1"
+            >
+              {[
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+              ].map((mName, idx) => (
+                <option key={mName} value={idx}>
+                  {mName}
+                </option>
+              ))}
+            </select>
+
+            <select
+              id="select-report-year"
+              value={selectedMonth.split('-')[0]}
+              onChange={(e) => {
+                const newY = e.target.value;
+                const curM = selectedMonth.split('-')[1];
+                onMonthChange(`${newY}-${curM}`);
+              }}
+              className="text-xs sm:text-sm font-bold text-neutral-900 bg-transparent border-none outline-none cursor-pointer"
+            >
+              {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 8 + i).map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
           </div>
+
           <button
             id="btn-report-next-month"
             onClick={handleNextMonth}
+            title="Next Month"
             className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white/60 rounded-lg transition-colors border border-transparent hover:border-white/80"
           >
             <ChevronRight className="w-4 h-4" />
@@ -210,7 +252,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <button
             id="btn-report-current-month"
             onClick={handleCurrentMonth}
-            className="text-xs font-semibold text-blue-700 hover:bg-blue-500/20 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg transition-colors ml-1"
+            className="text-xs font-semibold text-blue-700 hover:bg-blue-500/20 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg transition-colors"
           >
             Current Month
           </button>
@@ -460,19 +502,27 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     </div>
                   </div>
 
-                  {log.photo_url && (
-                    <img
-                      src={log.photo_url}
-                      alt="Photo preview"
-                      className="w-12 h-12 object-cover rounded-lg border border-neutral-200 shrink-0"
-                    />
-                  )}
+                  <ActivityPhoto
+                    log={log}
+                    categoryName={log.category?.name || 'Activity'}
+                    selectedDate={log.log_date}
+                    aspectRatio="square"
+                    onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
+                    className="shrink-0"
+                  />
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Full Photo Lightbox */}
+      <PhotoLightbox
+        url={lightboxPhoto?.url || null}
+        title={lightboxPhoto?.title}
+        onClose={() => setLightboxPhoto(null)}
+      />
     </div>
   );
 };

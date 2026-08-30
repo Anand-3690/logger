@@ -79,7 +79,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
         await subscribeToWebPush(authToken);
         setFeedbackMsg({
           type: 'success',
-          text: 'Push notifications enabled! Your self-hosted server cron will automatically send check-ins at scheduled times.',
+          text: 'Notifications enabled! Daily reminders and interactive check-ins are now active.',
         });
       }
 
@@ -175,7 +175,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
               )}
             </div>
             <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-              Managed automatically by our Node.js background scheduler (no Vercel account required). Prompts include{' '}
+              Automated reminders and habit check-ins. Prompts include{' '}
               <strong className="text-neutral-700 font-semibold">"Present / Yes"</strong> and{' '}
               <strong className="text-neutral-700 font-semibold">"Absent / No"</strong> interactive buttons.
             </p>

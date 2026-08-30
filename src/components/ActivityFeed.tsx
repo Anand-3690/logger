@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { DailyLog } from '../types';
 import { CategoryIcon } from './CategoryIcon';
-import { Trash2, Image as ImageIcon, Plus, Clock, Check, X, Loader2 } from 'lucide-react';
+import { ActivityPhoto } from './ActivityPhoto';
+import { Trash2, Plus, Clock, Check, X, Loader2 } from 'lucide-react';
 
 interface ActivityFeedProps {
   logs: DailyLog[];
@@ -206,27 +207,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
             )}
 
             {/* Photo Attachment */}
-            {log.photo_url && (
-              <div className="mt-2.5">
-                <button
-                  onClick={() => onViewPhoto(log.photo_url!, `${categoryName} - ${selectedDate}`)}
-                  className="relative rounded-xl overflow-hidden border border-white/80 shadow-xs max-h-56 w-full group/photo text-left block focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <img
-                    src={log.photo_url}
-                    alt={`${categoryName} photo`}
-                    className="w-full h-44 object-cover group-hover/photo:scale-102 transition-transform duration-300"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-neutral-950/30 opacity-0 group-hover/photo:opacity-100 backdrop-blur-xs transition-opacity flex items-center justify-center">
-                    <span className="glass-panel text-neutral-900 text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                      Tap to enlarge
-                    </span>
-                  </div>
-                </button>
-              </div>
-            )}
+            <ActivityPhoto
+              log={log}
+              categoryName={categoryName}
+              selectedDate={selectedDate}
+              onViewPhoto={onViewPhoto}
+              className="mt-2.5"
+            />
           </div>
         );
       })}

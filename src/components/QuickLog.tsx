@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { getTodayLocalDate } from '../utils/dateUtils';
 import { DailyLog } from '../types';
+import { processSyncQueue } from '../syncEngine';
 
 interface QuickLogProps {
   categoryId: string;
@@ -39,6 +40,8 @@ export const QuickLog: React.FC<QuickLogProps> = ({ categoryId, onClose }) => {
         
         await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'upsert', timestamp: Date.now() });
       });
+
+      processSyncQueue().catch(e => console.warn('Sync error:', e));
 
       // Seamlessly transition back to the dashboard
       window.history.replaceState(null, '', '/');

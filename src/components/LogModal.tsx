@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Category } from '../types';
 import { CategoryIcon } from './CategoryIcon';
 import { IconPicker } from './IconPicker';
+import { compressImage } from '../utils/imageCompressor';
 import {
   X,
   Upload,
@@ -71,49 +72,79 @@ export const LogModal: React.FC<LogModalProps> = ({
   // Quick delete state in modal
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Photo compression & data state
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState<boolean>(false);
 
-  // Reset and initialize when opened
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevIsOpenRef = useRef<boolean>(false);
+
+  // Reset and initialize only when modal transitions from closed to open
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
+      // Fresh modal open: reset form inputs
       setLogDate(selectedDate);
       setNotes('');
       setPhotoFile(null);
       setPhotoPreview(null);
+      setPhotoDataUrl(null);
+      setIsCompressingPhoto(false);
       setErrorMsg(null);
       setIsCreatingCategory(false);
+
       if (categories.length > 0) {
-        // If current selection is invalid or not in categories, pick first
         const exists = categories.some((c) => c.id === selectedCategoryId);
         if (!exists) {
           setSelectedCategoryId(categories[0].id);
         }
       }
+    } else if (isOpen) {
+      // Modal is already open; if categories changed and current selectedCategoryId is invalid, fallback
+      if (categories.length > 0) {
+        const exists = categories.some((c) => c.id === selectedCategoryId);
+        if (!exists && !selectedCategoryId) {
+          setSelectedCategoryId(categories[0].id);
+        }
+      }
     }
-  }, [isOpen, selectedDate, categories]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, selectedDate, categories, selectedCategoryId]);
 
   if (!isOpen) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        setErrorMsg('Image size cannot exceed 10MB.');
-        return;
+      try {
+        setIsCompressingPhoto(true);
+        setErrorMsg(null);
+        // Compress image to standard JPEG (max 1600px, quality 0.82)
+        const compressed = await compressImage(file, 1600, 0.82);
+        // Wrap as File/Blob with proper name and MIME type
+        const compressedFile = new File([compressed.blob], 'activity_photo.jpg', {
+          type: 'image/jpeg',
+        });
+        setPhotoFile(compressedFile);
+        setPhotoDataUrl(compressed.dataUrl);
+        setPhotoPreview(compressed.dataUrl);
+      } catch (err: any) {
+        console.warn('Image compression fallback:', err);
+        setPhotoFile(file);
+        const previewUrl = URL.createObjectURL(file);
+        setPhotoPreview(previewUrl);
+      } finally {
+        setIsCompressingPhoto(false);
       }
-      setPhotoFile(file);
-      const previewUrl = URL.createObjectURL(file);
-      setPhotoPreview(previewUrl);
-      setErrorMsg(null);
     }
   };
 
   const handleRemovePhoto = () => {
     setPhotoFile(null);
-    if (photoPreview) {
+    setPhotoDataUrl(null);
+    if (photoPreview && photoPreview.startsWith('blob:')) {
       URL.revokeObjectURL(photoPreview);
-      setPhotoPreview(null);
     }
+    setPhotoPreview(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -183,6 +214,9 @@ export const LogModal: React.FC<LogModalProps> = ({
       }
       if (photoFile) {
         formData.append('photo', photoFile);
+      }
+      if (photoDataUrl) {
+        formData.append('photo_data', photoDataUrl);
       }
 
       await onSaveLog(formData);
@@ -448,7 +482,14 @@ export const LogModal: React.FC<LogModalProps> = ({
               Attach Photo / Snapshot (Optional)
             </label>
 
-            {photoPreview ? (
+            {isCompressingPhoto ? (
+              <div className="border border-neutral-200 rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-2 bg-neutral-50">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                <span className="text-xs font-semibold text-neutral-700">
+                  Optimizing photo for mobile...
+                </span>
+              </div>
+            ) : photoPreview ? (
               <div className="relative rounded-2xl overflow-hidden border border-neutral-200 bg-neutral-900 group">
                 <img
                   src={photoPreview}
@@ -477,10 +518,10 @@ export const LogModal: React.FC<LogModalProps> = ({
                   <Upload className="w-4 h-4" />
                 </div>
                 <span className="text-xs font-semibold text-neutral-700">
-                  Tap to upload photo or drag & drop
+                  Tap to upload photo or take picture
                 </span>
                 <span className="text-[11px] text-neutral-400">
-                  PNG, JPG, WEBP up to 10MB (stored with @vercel/blob)
+                  PNG, JPG, HEIC, WebP (auto-optimized)
                 </span>
                 <input
                   ref={fileInputRef}

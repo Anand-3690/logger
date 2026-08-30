@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock } from 'lucide-react';
+import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText } from 'lucide-react';
 import { NotificationToggle } from './NotificationToggle';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenNewLog: () => void;
   onOpenSchema: () => void;
   onOpenCategories?: () => void;
+  onOpenTechDocs?: () => void;
   onLogout?: () => void;
   authToken?: string | null;
   onToast?: (message: string, type: 'success' | 'error') => void;
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewLog,
   onOpenSchema,
   onOpenCategories,
+  onOpenTechDocs,
   onLogout,
   authToken,
   onToast,
@@ -96,6 +98,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Plus className="w-3.5 h-3.5" />
             <span>New Log</span>
           </button>
+
+          {/* Technical Architecture & Specification PDF Modal */}
+          {onOpenTechDocs && (
+            <button
+              id="btn-open-tech-docs"
+              onClick={onOpenTechDocs}
+              title="View Technical Specification & Export PDF"
+              className="p-2 text-neutral-700 hover:text-blue-700 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span className="hidden lg:inline text-neutral-700">Tech Spec PDF</span>
+            </button>
+          )}
 
           {/* Database Schema & Vercel Code Modal */}
           <button

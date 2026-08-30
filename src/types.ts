@@ -20,10 +20,11 @@ export interface DailyLog {
   notes?: string | null;
   photo_url?: string | null;
   photo_storage_path?: string | null;
+  photo_data?: string | null; // Base64 data URL for offline instant backup
   status?: 'present' | 'absent';
   created_at: string; // ISO timestamp
   updated_at?: string; // Added for sync engine conflict resolution
-  local_photo?: File;  // Added for offline-first blob storage
+  local_photo?: File | Blob; // Added for offline-first blob storage
   category?: Category;
 }
 

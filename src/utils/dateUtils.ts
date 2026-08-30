@@ -45,6 +45,30 @@ export function formatLongDate(dateStr: string): string {
 }
 
 /**
+ * Formats "YYYY-MM-DD" into short date, e.g. "Fri, Aug 28, 2026".
+ */
+export function formatMediumDate(dateStr: string): string {
+  const d = parseLocalDate(dateStr);
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Formats "YYYY-MM-DD" into Month and Year, e.g. "August 2026".
+ */
+export function formatMonthYear(dateStr: string): string {
+  const d = parseLocalDate(dateStr);
+  return d.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
  * Formats "YYYY-MM-DD" into short month & day, e.g. "Aug 26".
  */
 export function formatShortDate(dateStr: string): string {
@@ -72,4 +96,26 @@ export function getCurrentLocalMonth(): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
+}
+
+/**
+ * Add or subtract months from a "YYYY-MM-DD" date string.
+ */
+export function addMonthsToDate(dateStr: string, amount: number): string {
+  const d = parseLocalDate(dateStr);
+  const targetDay = d.getDate();
+  d.setDate(1); // avoid month rollover issues
+  d.setMonth(d.getMonth() + amount);
+  const maxDays = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(targetDay, maxDays));
+  return formatLocalDate(d);
+}
+
+/**
+ * Add or subtract years from a "YYYY-MM-DD" date string.
+ */
+export function addYearsToDate(dateStr: string, amount: number): string {
+  const d = parseLocalDate(dateStr);
+  d.setFullYear(d.getFullYear() + amount);
+  return formatLocalDate(d);
 }

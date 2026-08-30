@@ -20,7 +20,7 @@ self.addEventListener('push', (event) => {
     icon: '/assets/icon-192.png',
     badge: '/assets/icon-192.png',
     data: {
-      url: '/dashboard',
+      url: '/',
       log_date: new Date().toISOString().split('T')[0],
     },
     actions: [
@@ -57,6 +57,56 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// Helper to record activity into IndexedDB from the service worker
+async function saveToIndexedDB(logPayload) {
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open('TrackerLocalDB', 1);
+      request.onerror = () => resolve(false);
+      request.onsuccess = (event) => {
+        try {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('dailyLogs')) {
+            resolve(false);
+            return;
+          }
+          const tx = db.transaction(['dailyLogs', 'syncQueue'], 'readwrite');
+          const logsStore = tx.objectStore('dailyLogs');
+          const syncStore = tx.objectStore('syncQueue');
+
+          const now = new Date().toISOString();
+          const logRecord = {
+            id: crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            log_date: logPayload.log_date,
+            category_id: logPayload.category_id || 'general',
+            notes: logPayload.notes || '',
+            status: logPayload.status || 'present',
+            updated_at: now,
+            created_at: now,
+          };
+
+          logsStore.put(logRecord);
+          if (syncStore) {
+            syncStore.put({
+              id: logRecord.id,
+              table: 'daily_logs',
+              action: 'upsert',
+              timestamp: Date.now(),
+            });
+          }
+
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch {
+          resolve(false);
+        }
+      };
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 // 2. Handle interactive button clicks & notification taps
 self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification click action:', event.action);
@@ -69,89 +119,63 @@ self.addEventListener('notificationclick', (event) => {
   // Close the notification immediately
   notification.close();
 
-  // If "Present / Yes" button is clicked:
-  if (action === 'present') {
+  // If "Present / Yes" or "Absent / No" button is clicked:
+  if (action === 'present' || action === 'absent') {
     event.waitUntil(
       (async () => {
-        try {
-          const logPayload = {
-            log_date: today,
-            category_id: data.category_id,
-            notes: `Recorded automatically via Push Notification (Present / Yes)`,
-            status: 'present',
-          };
+        const isPresent = action === 'present';
+        const logPayload = {
+          log_date: today,
+          category_id: data.category_id,
+          notes: `Recorded via notification (${isPresent ? 'Present / Yes' : 'Absent / No'})`,
+          status: action,
+        };
 
-          const res = await fetch('/api/logs', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(logPayload),
+        // 1. Notify any active clients
+        const allClients = await self.clients.matchAll({
+          type: 'window',
+          includeUncontrolled: true,
+        });
+
+        let clientHandled = false;
+        for (const client of allClients) {
+          client.postMessage({
+            type: 'RECORD_LOG',
+            data: logPayload,
           });
+          clientHandled = true;
+        }
 
-          console.log('[SW] Background log recorded (present):', res.status);
+        // 2. If no client window was open, persist directly in IndexedDB
+        if (!clientHandled) {
+          await saveToIndexedDB(logPayload);
+        }
 
-          // Show immediate feedback notification
-          await self.registration.showNotification('Activity Logged! ✅', {
-            body: `Marked "Present" for ${data.category_name || 'Category'} today. Great job!`,
+        // 3. Show instant confirmation notification
+        await self.registration.showNotification(
+          isPresent ? 'Activity Logged! ✅' : 'Check-in Noted ⚪',
+          {
+            body: isPresent
+              ? `Marked "Present" for today. Great job!`
+              : `Marked "Absent" for today.`,
             icon: '/assets/icon-192.png',
             tag: 'log-feedback',
             silent: true,
-          });
-        } catch (err) {
-          console.error('[SW] Failed to record present log:', err);
-        }
+          }
+        );
       })()
     );
     return;
   }
 
-  // If "Absent / No" button is clicked:
-  if (action === 'absent') {
-    event.waitUntil(
-      (async () => {
-        try {
-          const logPayload = {
-            log_date: today,
-            category_id: data.category_id,
-            notes: `Marked as absent via Push Notification (Absent / No)`,
-            status: 'absent',
-          };
-
-          const res = await fetch('/api/logs', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(logPayload),
-          });
-
-          console.log('[SW] Background log recorded (absent):', res.status);
-
-          // Show discreet feedback notification
-          await self.registration.showNotification('Check-in Noted ⚪', {
-            body: `Marked "Absent" for ${data.category_name || 'Category'} for today.`,
-            icon: '/assets/icon-192.png',
-            tag: 'log-feedback',
-            silent: true,
-          });
-        } catch (err) {
-          console.error('[SW] Failed to record absent action:', err);
-        }
-      })()
-    );
-    return;
-  }
-
-  // If clicked notification body itself without button action: Open / focus the app window
+  // If clicked notification body itself: Open / focus the app window
   event.waitUntil(
     (async () => {
-      // Build the target URL using the category_id from payload
       let targetPath = data.url || '/';
       if (data.category_id) {
-        targetPath = `/quick-log?category_id=${data.category_id}`;
+        targetPath = `/?category_id=${data.category_id}`;
       }
-      
+
       const urlToOpen = new URL(targetPath, self.location.origin).href;
 
       const allClients = await self.clients.matchAll({
@@ -163,13 +187,10 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of allClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           await client.focus();
-          
-          // Send a message to the client to navigate smoothly without a hard reload
           client.postMessage({
             type: 'NAVIGATE',
-            url: targetPath
+            url: targetPath,
           });
-          
           return;
         }
       }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal, RefreshCw, CheckCircle2, AlertCircle, FileText, Download } from 'lucide-react';
+import { generateTechSpecPDF } from '../utils/techSpecPdf';
 
 interface VercelSchemaModalProps {
   isOpen: boolean;
@@ -127,9 +128,19 @@ CREATE TABLE IF NOT EXISTS daily_logs (
   status TEXT DEFAULT 'present',
   photo_url TEXT,
   photo_data TEXT,
+  photo_storage_path TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(log_date, category_id)
 );
+
+-- Schema Migrations (Safe for existing tables)
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS photo_data TEXT;
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS photo_storage_path TEXT;
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS reminder_time TIME WITHOUT TIME ZONE DEFAULT '20:00:00';
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
 -- 3. Web Push Subscriptions Table
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -469,10 +480,13 @@ self.addEventListener('notificationclick', (event) => {
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-800 flex items-center justify-between bg-neutral-950/50">
-          <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-            <CloudUpload className="w-3.5 h-3.5 text-blue-400" />
-            <span>Vercel Cron + Web Push Ready</span>
-          </div>
+          <button
+            onClick={() => generateTechSpecPDF()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Tech Spec PDF</span>
+          </button>
           <button
             onClick={onClose}
             className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium rounded-xl transition-colors"
