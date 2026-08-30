@@ -187,7 +187,7 @@ export const processSyncQueue = async () => {
               const { error: upsertErr } = await adaptiveUpsert(
                 'daily_logs',
                 payload,
-                { onConflict: 'log_date,category_id' }
+                { onConflict: 'id' }
               );
 
               if (upsertErr) throw upsertErr;

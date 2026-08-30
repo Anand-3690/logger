@@ -61,19 +61,19 @@ self.addEventListener('push', (event) => {
 async function saveToIndexedDB(logPayload) {
   return new Promise((resolve) => {
     try {
-      const request = indexedDB.open('TrackerLocalDB', 1);
+      // Open without locking version 1 so it safely opens the current DB version
+      const request = indexedDB.open('TrackerLocalDB');
       request.onerror = () => resolve(false);
       request.onsuccess = (event) => {
         try {
           const db = event.target.result;
-          if (!db.objectStoreNames.contains('dailyLogs')) {
+          if (!db.objectStoreNames.contains('dailyLogs') || !db.objectStoreNames.contains('syncQueue')) {
             resolve(false);
             return;
           }
           const tx = db.transaction(['dailyLogs', 'syncQueue'], 'readwrite');
           const logsStore = tx.objectStore('dailyLogs');
           const syncStore = tx.objectStore('syncQueue');
-
           const now = new Date().toISOString();
           const logRecord = {
             id: crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -84,7 +84,6 @@ async function saveToIndexedDB(logPayload) {
             updated_at: now,
             created_at: now,
           };
-
           logsStore.put(logRecord);
           if (syncStore) {
             syncStore.put({
@@ -94,7 +93,6 @@ async function saveToIndexedDB(logPayload) {
               timestamp: Date.now(),
             });
           }
-
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => resolve(false);
         } catch {

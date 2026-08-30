@@ -9,83 +9,33 @@ const objectUrlCache = new WeakMap<Blob, string>();
  * handling local File/Blob objects, full Supabase public URLs,
  * and relative Supabase Storage paths.
  */
-export function resolvePhotoUrl(
-  logOrPhoto?:
-    | DailyLog
-    | {
-        photo_url?: string | null;
-        photo_storage_path?: string | null;
-        photo_data?: string | null;
-        local_photo?: File | Blob | null;
-      }
-    | string
-    | null
-): string | null {
-  if (!logOrPhoto) return null;
+export function resolvePhotoUrl(log: any): string | null {
+  if (!log) return null;
 
-  // If passed a plain string URL or path
-  if (typeof logOrPhoto === 'string') {
-    const trimmed = logOrPhoto.trim();
-    if (!trimmed) return null;
-    if (
-      trimmed.startsWith('http://') ||
-      trimmed.startsWith('https://') ||
-      trimmed.startsWith('data:') ||
-      trimmed.startsWith('blob:')
-    ) {
-      return trimmed;
-    }
-    const cleanPath = trimmed.replace(/^log_photos\//, '').replace(/^\/+/, '');
-    const { data } = supabase.storage.from('log_photos').getPublicUrl(cleanPath);
-    return data.publicUrl || null;
+  // 1. If photo_data (base64) exists, use it immediately
+  if (log.photo_data && typeof log.photo_data === 'string' && log.photo_data.startsWith('data:')) {
+    return log.photo_data;
   }
 
-  // If log has an un-synced or local File/Blob in IndexedDB
-  if (logOrPhoto.local_photo && logOrPhoto.local_photo instanceof Blob) {
-    if (objectUrlCache.has(logOrPhoto.local_photo)) {
-      return objectUrlCache.get(logOrPhoto.local_photo)!;
-    }
-    try {
-      const url = URL.createObjectURL(logOrPhoto.local_photo);
-      objectUrlCache.set(logOrPhoto.local_photo, url);
-      return url;
-    } catch (e) {
-      console.warn('Failed to create ObjectURL for local photo:', e);
-    }
+  // 2. Check direct photo_url if it's a valid HTTP link
+  if (log.photo_url && typeof log.photo_url === 'string' && log.photo_url.startsWith('http')) {
+    return log.photo_url;
   }
 
-  // If base64 data URL is stored
-  if (logOrPhoto.photo_data && typeof logOrPhoto.photo_data === 'string' && logOrPhoto.photo_data.startsWith('data:')) {
-    return logOrPhoto.photo_data;
+  // 3. Check photo_storage_path if it's already a full HTTP URL (like your working entry idx:10)
+  if (log.photo_storage_path && typeof log.photo_storage_path === 'string' && log.photo_storage_path.startsWith('http')) {
+    return log.photo_storage_path;
   }
 
-  // Check photo_url first, then photo_storage_path
-  const target = logOrPhoto.photo_url || logOrPhoto.photo_storage_path;
-  if (!target || typeof target !== 'string') {
-    // Last chance fallback to photo_data
-    if (logOrPhoto.photo_data) return logOrPhoto.photo_data;
-    return null;
+  // 4. Otherwise, construct the public Supabase URL from a relative storage path
+  const path = log.photo_storage_path || log.photo_url;
+  if (path && typeof path === 'string') {
+    const cleanPath = path.replace(/^log_photos\//, '').replace(/^\/+/, '');
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://bpvfvitncpyioaomaqsw.supabase.co';
+    return `${supabaseUrl}/storage/v1/object/public/log_photos/${cleanPath}`;
   }
 
-  const trimmed = target.trim();
-  if (!trimmed) {
-    return logOrPhoto.photo_data || null;
-  }
-
-  // Already a full public/data/blob URL
-  if (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('blob:')
-  ) {
-    return trimmed;
-  }
-
-  // Relative storage path inside the Supabase bucket
-  const cleanPath = trimmed.replace(/^log_photos\//, '').replace(/^\/+/, '');
-  const { data } = supabase.storage.from('log_photos').getPublicUrl(cleanPath);
-  return data.publicUrl || null;
+  return null;
 }
 
 /**
