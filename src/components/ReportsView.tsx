@@ -495,7 +495,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         <span className="text-neutral-400 text-xs font-mono">{log.log_date}</span>
                       </div>
                       {log.notes && (
-                        <p className="text-neutral-600 text-xs mt-1 whitespace-pre-line leading-relaxed">
+                        <p className="text-neutral-600 text-xs mt-1 whitespace-pre-line break-words leading-relaxed">
                           {log.notes}
                         </p>
                       )}

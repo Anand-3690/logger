@@ -70,6 +70,7 @@ export const ActivityPhoto: React.FC<ActivityPhotoProps> = ({
       <img
         src={photoSrc}
         alt={categoryName}
+        crossOrigin="anonymous"
         onLoad={() => setIsLoading(false)}
         onError={handleImageError}
         className={`w-full object-cover group-hover:scale-105 transition-transform duration-300 ${
