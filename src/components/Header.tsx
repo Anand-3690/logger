@@ -1,10 +1,10 @@
 import React from 'react';
-import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText } from 'lucide-react';
+import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText, History } from 'lucide-react';
 import { NotificationToggle } from './NotificationToggle';
 
 interface HeaderProps {
-  currentView: 'dashboard' | 'reports';
-  onViewChange: (view: 'dashboard' | 'reports') => void;
+  currentView: 'dashboard' | 'reports'| 'on-this-day'; // Added 'on-this-day';
+  onViewChange: (view: 'dashboard' | 'reports' | 'on-this-day') => void;
   onOpenNewLog: () => void;
   onOpenSchema: () => void;
   onOpenCategories?: () => void;
@@ -70,6 +70,21 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <BarChart3 className="w-3.5 h-3.5" />
               <span>Reports</span>
+            </button>
+            <button
+              id="view-tab-on-this-day"
+              onClick={() => {
+                onViewChange('on-this-day');
+                window.history.pushState(null, '', '/on-this-day');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                currentView === 'on-this-day'
+                  ? 'bg-white/90 text-blue-700 shadow-xs font-bold border border-white/90'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/40'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">On This Day</span>
             </button>
           </div>
 

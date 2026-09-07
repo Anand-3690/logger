@@ -19,6 +19,7 @@ import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine
 import { resolvePhotoUrl } from './utils/photoUtils';
 import { useAuth } from './AuthContext';
 import { LoginScreen } from './LoginScreen';
+import { OnThisDayView } from './components/OnThisDayView';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 
@@ -30,7 +31,9 @@ export default function App() {
   }
   
   // Navigation & View State
-  const [currentView, setCurrentView] = useState<'dashboard' | 'reports'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'reports' | 'on-this-day'>(
+    window.location.pathname.includes('/on-this-day') ? 'on-this-day' : 'dashboard'
+  );
   const [, setForceRender] = useState(0);
 
   // Authentication State
@@ -399,7 +402,12 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:px-6 space-y-4">
-        {currentView === 'dashboard' ? (
+        {currentView === 'on-this-day' ? (
+          <OnThisDayView onBack={() => {
+            setCurrentView('dashboard');
+            window.history.pushState(null, '', '/');
+          }} />
+        ) : currentView === 'dashboard' ? (
           <div className="space-y-4">
             <DaySelector
               selectedDate={selectedDate}
@@ -408,7 +416,7 @@ export default function App() {
             />
             <ActivityFeed
               logs={currentDateLogs}
-              isLoading={false} // Local DB is instant!
+              isLoading={false}
               selectedDate={selectedDate}
               onOpenNewLog={() => setIsLogModalOpen(true)}
               onDeleteLog={handleDeleteLog}
