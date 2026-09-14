@@ -281,14 +281,14 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
         </button>
 
         {/* Action Controls & Fast Steppers */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Today Button */}
           <button
             id="btn-day-today"
             onClick={handleToday}
-            className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-lg transition-all ${
+            className={`px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-xl transition-all cursor-pointer ${
               isSelectedToday
-                ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-2xs'
                 : 'text-neutral-600 hover:text-blue-700 hover:bg-white/80 bg-white/50 border border-neutral-200/70'
             }`}
           >
@@ -300,18 +300,18 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
             id="btn-prev-month"
             onClick={handlePrevMonth}
             title="Previous Month"
-            className="hidden md:flex p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-white/70 rounded-lg transition-colors"
+            className="hidden md:flex p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-white/70 rounded-lg transition-colors cursor-pointer"
           >
             <ChevronsLeft className="w-3.5 h-3.5" />
           </button>
 
           {/* Day Stepper Segment */}
-          <div className="flex items-center bg-white/60 border border-neutral-200/80 rounded-lg p-0.5 shadow-2xs">
+          <div className="flex items-center bg-white/70 border border-neutral-200/80 rounded-xl p-0.5 shadow-2xs">
             <button
               id="btn-day-prev"
               onClick={handlePrevDay}
               title="Previous Day"
-              className="p-1 text-neutral-600 hover:text-neutral-900 hover:bg-white rounded-md transition-all active:scale-95"
+              className="p-1 sm:p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white rounded-lg transition-all active:scale-95 cursor-pointer"
             >
               <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
@@ -320,7 +320,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
               id="btn-day-next"
               onClick={handleNextDay}
               title="Next Day"
-              className="p-1 text-neutral-600 hover:text-neutral-900 hover:bg-white rounded-md transition-all active:scale-95"
+              className="p-1 sm:p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-white rounded-lg transition-all active:scale-95 cursor-pointer"
             >
               <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
@@ -330,13 +330,13 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
             id="btn-next-month"
             onClick={handleNextMonth}
             title="Next Month"
-            className="hidden md:flex p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-white/70 rounded-lg transition-colors"
+            className="hidden md:flex p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-white/70 rounded-lg transition-colors cursor-pointer"
           >
             <ChevronsRight className="w-3.5 h-3.5" />
           </button>
 
-          {/* Quick Native Date Picker button */}
-          <div className="relative">
+          {/* Quick Native Date Picker button (Hidden on mobile to save space; tapping the date displays the full rich calendar) */}
+          <div className="relative hidden sm:block">
             <input
               ref={nativeDateInputRef}
               type="date"
@@ -348,7 +348,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
             <button
               id="btn-native-datepicker-trigger"
               type="button"
-              className="p-1.5 text-neutral-600 hover:text-blue-700 hover:bg-white/80 rounded-lg transition-colors border border-neutral-200/80 bg-white/50"
+              className="p-1.5 text-neutral-600 hover:text-blue-700 hover:bg-white/80 rounded-lg transition-colors border border-neutral-200/80 bg-white/50 cursor-pointer"
               title="Select via native calendar"
             >
               <CalendarIcon className="w-3.5 h-3.5" />

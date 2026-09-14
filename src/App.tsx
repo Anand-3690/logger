@@ -23,6 +23,7 @@ import { OnThisDayView } from './components/OnThisDayView';
 import { TechDocsModal } from './components/TechDocsModal';
 import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
+import { BottomNavBar } from './components/BottomNavBar';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 
@@ -447,7 +448,7 @@ function AuthenticatedApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-12 relative overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-24 md:pb-12 relative overflow-x-hidden">
       <div className="fixed top-[-80px] left-[-80px] w-96 h-96 bg-blue-300/25 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed top-1/3 right-[-100px] w-[28rem] h-[28rem] bg-indigo-300/20 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed bottom-[-60px] left-1/4 w-96 h-96 bg-sky-200/25 rounded-full blur-3xl pointer-events-none -z-10" />
@@ -485,7 +486,7 @@ function AuthenticatedApp() {
                 type="text"
                 value={dashboardSearch}
                 onChange={(e) => setDashboardSearch(e.target.value)}
-                placeholder="Quick filter today's logs or press ⌘K to search all history..."
+                placeholder="Filter today's logs..."
                 className="w-full bg-transparent text-xs font-semibold text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
               />
               {dashboardSearch && (
@@ -493,7 +494,7 @@ function AuthenticatedApp() {
                   type="button"
                   id="btn-clear-dashboard-filter"
                   onClick={() => setDashboardSearch('')}
-                  className="p-1 text-neutral-400 hover:text-neutral-700 rounded-full"
+                  className="p-1 text-neutral-400 hover:text-neutral-700 rounded-full cursor-pointer"
                   title="Clear filter"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -503,7 +504,7 @@ function AuthenticatedApp() {
                 type="button"
                 id="btn-open-global-search-dashboard"
                 onClick={() => setIsSearchOpen(true)}
-                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200/60 shrink-0 flex items-center gap-1.5"
+                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200/60 shrink-0 flex items-center gap-1.5 cursor-pointer"
               >
                 <span>Search All</span>
                 <kbd className="hidden sm:inline font-mono text-[10px] text-blue-500 bg-white px-1 py-0.5 rounded border border-blue-200 shadow-2xs">
@@ -544,17 +545,37 @@ function AuthenticatedApp() {
         )}
       </main>
 
-      <div className="fixed bottom-6 right-6 z-40">
+      {/* Desktop Floating Action Button (Mobile uses sleek center button in BottomNavBar) */}
+      <div className="hidden md:flex fixed bottom-6 right-6 z-30">
         <button
+          id="btn-fab-add-log"
           onClick={() => {
             setEditingLog(null);
             setIsLogModalOpen(true);
           }}
-          className="w-14 h-14 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all group focus:outline-none focus:ring-4 focus:ring-blue-500/30"
+          className="w-14 h-14 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all group focus:outline-none focus:ring-4 focus:ring-blue-500/30 cursor-pointer"
         >
           <Plus className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
         </button>
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNavBar
+        currentView={currentView}
+        onViewChange={(v) => {
+          setCurrentView(v);
+          if (v === 'on-this-day') {
+            window.history.pushState(null, '', '/on-this-day');
+          } else if (v === 'dashboard') {
+            window.history.pushState(null, '', '/');
+          }
+        }}
+        onOpenNewLog={() => {
+          setEditingLog(null);
+          setIsLogModalOpen(true);
+        }}
+        onOpenSearch={() => setIsSearchOpen(true)}
+      />
 
       <LogModal
         isOpen={isLogModalOpen}
@@ -609,7 +630,7 @@ function AuthenticatedApp() {
       />
 
       {toastMessage && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl border text-xs font-semibold backdrop-blur-md ${toastMessage.type === 'success' ? 'bg-neutral-900/90 text-white border-neutral-800' : 'bg-red-900/90 text-white border-red-800'}`}>
             {toastMessage.type === 'success' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
             <span>{toastMessage.text}</span>

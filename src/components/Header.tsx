@@ -48,14 +48,14 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Action Controls & Navigation Switcher */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Global Search Button */}
           {onOpenSearch && (
             <button
               id="btn-header-search"
               onClick={onOpenSearch}
               title="Search past logs, memories, and notes (Ctrl+K)"
-              className="px-2.5 py-1.5 text-neutral-600 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold"
+              className="p-2 sm:px-2.5 sm:py-1.5 text-neutral-600 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
             >
               <Search className="w-4 h-4 text-blue-600" />
               <span className="hidden md:inline">Search</span>
@@ -65,12 +65,12 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* View Toggle Tabs */}
-          <div className="flex items-center p-1 bg-white/60 backdrop-blur-md rounded-xl border border-white/80 shadow-xs text-xs font-semibold">
+          {/* View Toggle Tabs (Desktop only - mobile uses sleek BottomNavBar) */}
+          <div className="hidden md:flex items-center p-1 bg-white/60 backdrop-blur-md rounded-xl border border-white/80 shadow-xs text-xs font-semibold">
             <button
               id="view-tab-dashboard"
               onClick={() => onViewChange('dashboard')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 currentView === 'dashboard'
                   ? 'bg-white/90 text-blue-700 shadow-xs font-bold border border-white/90'
                   : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/40'
@@ -82,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="view-tab-reports"
               onClick={() => onViewChange('reports')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 currentView === 'reports'
                   ? 'bg-white/90 text-blue-700 shadow-xs font-bold border border-white/90'
                   : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/40'
@@ -97,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onViewChange('on-this-day');
                 window.history.pushState(null, '', '/on-this-day');
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 currentView === 'on-this-day'
                   ? 'bg-white/90 text-blue-700 shadow-xs font-bold border border-white/90'
                   : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/40'
@@ -117,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-open-category-manager"
               onClick={onOpenCategories}
               title="Manage Categories & Custom Icons"
-              className="p-2 text-neutral-700 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold"
+              className="p-2 text-neutral-700 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
             >
               <Tag className="w-4 h-4 text-purple-600" />
               <span className="hidden sm:inline">Categories</span>
@@ -128,31 +128,31 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="btn-header-add-log"
             onClick={onOpenNewLog}
-            className="hidden md:flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600/90 hover:bg-blue-600 backdrop-blur-xs active:scale-97 rounded-xl transition-all shadow-sm shadow-blue-600/30 border border-blue-400/40"
+            className="hidden md:flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600/90 hover:bg-blue-600 backdrop-blur-xs active:scale-97 rounded-xl transition-all shadow-sm shadow-blue-600/30 border border-blue-400/40 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Log</span>
           </button>
 
-          {/* Technical Architecture & Specification PDF Modal */}
+          {/* Technical Architecture & Specification PDF Modal (Tablet/Desktop) */}
           {onOpenTechDocs && (
             <button
               id="btn-open-tech-docs"
               onClick={onOpenTechDocs}
               title="View Technical Specification & Export PDF"
-              className="p-2 text-neutral-700 hover:text-blue-700 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold"
+              className="hidden sm:flex p-2 text-neutral-700 hover:text-blue-700 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors items-center gap-1.5 text-xs font-semibold cursor-pointer"
             >
               <FileText className="w-4 h-4 text-blue-600" />
               <span className="hidden lg:inline text-neutral-700">Tech Spec PDF</span>
             </button>
           )}
 
-          {/* Database Schema & Vercel Code Modal */}
+          {/* Database Schema & Vercel Code Modal (Desktop only) */}
           <button
             id="btn-open-schema-modal"
             onClick={onOpenSchema}
             title="View PostgreSQL Schema & Next.js Setup"
-            className="p-2 text-neutral-700 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors"
+            className="hidden sm:flex p-2 text-neutral-700 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors cursor-pointer"
           >
             <Database className="w-4 h-4" />
           </button>
