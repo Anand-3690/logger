@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, BellOff, BellRing, Loader2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Loader2, Settings } from 'lucide-react';
 import {
   getPushNotificationStatus,
   subscribeToWebPush,
@@ -10,11 +10,13 @@ import {
 interface NotificationToggleProps {
   authToken?: string | null;
   onToast?: (message: string, type: 'success' | 'error') => void;
+  onOpenSettings?: () => void;
 }
 
 export const NotificationToggle: React.FC<NotificationToggleProps> = ({
   authToken,
   onToast,
+  onOpenSettings,
 }) => {
   const [status, setStatus] = useState<PushStatus>({
     isSupported: true,
@@ -67,45 +69,59 @@ export const NotificationToggle: React.FC<NotificationToggleProps> = ({
   const isDenied = status.permission === 'denied';
 
   return (
-    <button
-      id="btn-header-toggle-notifications"
-      type="button"
-      onClick={handleToggle}
-      disabled={isLoading}
-      title={
-        isDenied
-          ? 'Notifications are blocked in browser settings (Click for help)'
-          : status.isSubscribed
-          ? 'Notifications are ON (Click to turn off)'
-          : 'Notifications are OFF (Click to turn on)'
-      }
-      className={`relative p-2 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-semibold ${
-        status.isSubscribed
-          ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/80 shadow-xs'
-          : isDenied
-          ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80'
-          : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 border-neutral-200/80'
-      }`}
-    >
-      {isLoading ? (
-        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-      ) : status.isSubscribed ? (
-        <>
-          <BellRing className="w-4 h-4 text-blue-600" />
-          <span className="hidden sm:inline">Notifications On</span>
-          <span className="w-2 h-2 rounded-full bg-blue-600 absolute -top-0.5 -right-0.5 ring-2 ring-white" />
-        </>
-      ) : isDenied ? (
-        <>
-          <BellOff className="w-4 h-4 text-amber-600" />
-          <span className="hidden sm:inline">Notifications Blocked</span>
-        </>
-      ) : (
-        <>
-          <BellOff className="w-4 h-4 text-neutral-400" />
-          <span className="hidden sm:inline">Notifications Off</span>
-        </>
+    <div className="flex items-center gap-1">
+      <button
+        id="btn-header-toggle-notifications"
+        type="button"
+        onClick={handleToggle}
+        disabled={isLoading}
+        title={
+          isDenied
+            ? 'Notifications are blocked in browser settings (Click for help)'
+            : status.isSubscribed
+            ? 'Notifications are ON (Click to turn off)'
+            : 'Notifications are OFF (Click to turn on)'
+        }
+        className={`relative p-2 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-semibold ${
+          status.isSubscribed
+            ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/80 shadow-xs'
+            : isDenied
+            ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80'
+            : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 border-neutral-200/80'
+        }`}
+      >
+        {isLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+        ) : status.isSubscribed ? (
+          <>
+            <BellRing className="w-4 h-4 text-blue-600" />
+            <span className="hidden sm:inline">Notifications On</span>
+            <span className="w-2 h-2 rounded-full bg-blue-600 absolute -top-0.5 -right-0.5 ring-2 ring-white" />
+          </>
+        ) : isDenied ? (
+          <>
+            <BellOff className="w-4 h-4 text-amber-600" />
+            <span className="hidden sm:inline">Notifications Blocked</span>
+          </>
+        ) : (
+          <>
+            <BellOff className="w-4 h-4 text-neutral-400" />
+            <span className="hidden sm:inline">Notifications Off</span>
+          </>
+        )}
+      </button>
+
+      {onOpenSettings && (
+        <button
+          id="btn-open-notification-settings"
+          type="button"
+          onClick={onOpenSettings}
+          title="Notification Settings & Diagnostics"
+          className="p-2 text-neutral-500 hover:text-neutral-800 hover:bg-white/80 rounded-xl border border-transparent hover:border-neutral-200/60 transition-colors"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
       )}
-    </button>
+    </div>
   );
 };

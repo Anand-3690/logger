@@ -4,7 +4,6 @@ import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
 import { PhotoLightbox } from './PhotoLightbox';
 import { resolvePhotoUrl } from '../utils/photoUtils';
-import { exportReportToPDF } from '../utils/pdfExport';
 import {
   Download,
   Calendar,
@@ -17,7 +16,10 @@ import {
   Loader2,
   FileText,
   CheckCircle2,
+  Eye,
 } from 'lucide-react';
+import type { PdfExportResult } from '../utils/downloadPdf';
+import { PdfPreviewModal } from './PdfPreviewModal';
 
 interface ReportsViewProps {
   logs: DailyLog[];
@@ -147,6 +149,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   }, [logs, categories, selectedMonth]);
 
   const [exportError, setExportError] = useState<string | null>(null);
+  const [pdfResult, setPdfResult] = useState<PdfExportResult | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
   const handleDownloadPDF = async () => {
     try {
@@ -173,9 +177,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         })),
       };
 
-      await exportReportToPDF('printable-monthly-report', filename, fallbackData);
+      const { exportReportToPDF } = await import('../utils/pdfExport');
+      const result = await exportReportToPDF('printable-monthly-report', filename, fallbackData);
+      setPdfResult(result);
       setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 4000);
+      setTimeout(() => setExportSuccess(false), 5000);
     } catch (err: any) {
       console.error('PDF export failed:', err);
       setExportError(err?.message || 'Could not generate PDF.');
@@ -258,30 +264,43 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </button>
         </div>
 
-        {/* Download Monthly PDF Button */}
-        <button
-          id="btn-download-monthly-pdf"
-          onClick={handleDownloadPDF}
-          disabled={isExportingPDF || isLoading}
-          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900/90 hover:bg-neutral-900 backdrop-blur-md active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-neutral-900/20 border border-neutral-700/50"
-        >
-          {isExportingPDF ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Generating PDF...</span>
-            </>
-          ) : exportSuccess ? (
-            <>
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>PDF Downloaded!</span>
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" />
-              <span>Download Monthly PDF</span>
-            </>
+        {/* Download & Preview Monthly PDF Buttons */}
+        <div className="flex items-center gap-2">
+          {pdfResult && (
+            <button
+              id="btn-preview-monthly-pdf"
+              onClick={() => setIsPreviewOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs sm:text-sm font-semibold rounded-xl border border-blue-200 transition-colors shadow-2xs"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Preview PDF</span>
+            </button>
           )}
-        </button>
+
+          <button
+            id="btn-download-monthly-pdf"
+            onClick={handleDownloadPDF}
+            disabled={isExportingPDF || isLoading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900/90 hover:bg-neutral-900 backdrop-blur-md active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-neutral-900/20 border border-neutral-700/50"
+          >
+            {isExportingPDF ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating PDF...</span>
+              </>
+            ) : exportSuccess ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>PDF Saved to PC!</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>Download Monthly PDF</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {exportError && (
@@ -522,6 +541,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         url={lightboxPhoto?.url || null}
         title={lightboxPhoto?.title}
         onClose={() => setLightboxPhoto(null)}
+      />
+
+      <PdfPreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        pdfResult={pdfResult}
       />
     </div>
   );

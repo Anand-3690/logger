@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal, RefreshCw, CheckCircle2, AlertCircle, FileText, Download } from 'lucide-react';
-import { generateTechSpecPDF } from '../utils/techSpecPdf';
 
 interface VercelSchemaModalProps {
   isOpen: boolean;
@@ -29,6 +28,8 @@ export const VercelSchemaModal: React.FC<VercelSchemaModalProps> = ({ isOpen, on
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
 
   const fetchStatus = () => {
     fetch('/api/db/status')
@@ -481,11 +482,33 @@ self.addEventListener('notificationclick', (event) => {
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-800 flex items-center justify-between bg-neutral-950/50">
           <button
-            onClick={() => generateTechSpecPDF()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white text-xs font-semibold shadow-xs transition-colors"
+            onClick={async () => {
+              try {
+                setIsDownloadingPdf(true);
+                const { generateTechSpecPDF } = await import('../utils/techSpecPdf');
+                generateTechSpecPDF();
+                setPdfSuccess(true);
+                setTimeout(() => setPdfSuccess(false), 4000);
+              } catch (e) {
+                console.error('Failed to export PDF:', e);
+              } finally {
+                setIsDownloadingPdf(false);
+              }
+            }}
+            disabled={isDownloadingPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-600 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-60"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download Tech Spec PDF</span>
+            {pdfSuccess ? (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                <span>PDF Ready!</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>{isDownloadingPdf ? 'Generating...' : 'Download Tech Spec PDF'}</span>
+              </>
+            )}
           </button>
           <button
             onClick={onClose}

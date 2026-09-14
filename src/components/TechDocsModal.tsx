@@ -13,8 +13,11 @@ import {
   Copy,
   Sparkles,
   CheckCircle2,
+  ExternalLink,
+  Eye,
 } from 'lucide-react';
-import { generateTechSpecPDF } from '../utils/techSpecPdf';
+import type { PdfExportResult } from '../utils/downloadPdf';
+import { PdfPreviewModal } from './PdfPreviewModal';
 
 interface TechDocsModalProps {
   isOpen: boolean;
@@ -24,16 +27,20 @@ interface TechDocsModalProps {
 export const TechDocsModal: React.FC<TechDocsModalProps> = ({ isOpen, onClose }) => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [pdfResult, setPdfResult] = useState<PdfExportResult | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     try {
       setIsGeneratingPdf(true);
-      generateTechSpecPDF();
+      const { generateTechSpecPDF } = await import('../utils/techSpecPdf');
+      const result = generateTechSpecPDF();
+      setPdfResult(result);
       setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 3000);
+      setTimeout(() => setDownloadSuccess(false), 5000);
     } catch (err) {
       console.error('Failed to generate PDF:', err);
     } finally {
@@ -73,6 +80,17 @@ export const TechDocsModal: React.FC<TechDocsModalProps> = ({ isOpen, onClose })
           </div>
 
           <div className="flex items-center gap-2">
+            {pdfResult && (
+              <button
+                id="btn-preview-tech-pdf"
+                onClick={() => setIsPreviewOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-200 hover:text-white bg-blue-950/60 hover:bg-blue-900/80 rounded-xl transition-all border border-blue-500/30"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Preview PDF</span>
+              </button>
+            )}
+
             <button
               id="btn-download-tech-pdf"
               onClick={handleDownloadPDF}
@@ -82,12 +100,12 @@ export const TechDocsModal: React.FC<TechDocsModalProps> = ({ isOpen, onClose })
               {downloadSuccess ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                  <span>PDF Downloaded!</span>
+                  <span>PDF Saved to PC!</span>
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
+                  <span>{isGeneratingPdf ? 'Generating...' : 'Download PDF'}</span>
                 </>
               )}
             </button>
@@ -112,20 +130,34 @@ export const TechDocsModal: React.FC<TechDocsModalProps> = ({ isOpen, onClose })
               </div>
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Ready for Engineering Hand-off & Archival
+                  {pdfResult ? 'Technical Specification PDF Ready' : 'Ready for Engineering Hand-off & Archival'}
                 </h4>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Download the complete publication-ready multi-page PDF formatted with system diagrams, relational schemas, and API tables.
+                  {pdfResult
+                    ? 'Your publication-ready PDF has been generated. Use the buttons to save or preview.'
+                    : 'Download the complete publication-ready multi-page PDF formatted with system diagrams, relational schemas, and API tables.'}
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleDownloadPDF}
-              className="shrink-0 px-3 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Get PDF Now</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {pdfResult && (
+                <button
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Preview</span>
+                </button>
+              )}
+              <button
+                onClick={handleDownloadPDF}
+                disabled={isGeneratingPdf}
+                className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{pdfResult ? 'Save File' : 'Get PDF Now'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Section 1: Tech Stack */}
@@ -333,6 +365,15 @@ ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT C
             >
               Close
             </button>
+            {pdfResult && (
+              <button
+                onClick={() => setIsPreviewOpen(true)}
+                className="px-3.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors flex items-center gap-1.5"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Preview Document</span>
+              </button>
+            )}
             <button
               onClick={handleDownloadPDF}
               disabled={isGeneratingPdf}
@@ -344,6 +385,12 @@ ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT C
           </div>
         </div>
       </div>
+
+      <PdfPreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        pdfResult={pdfResult}
+      />
     </div>
   );
 };

@@ -14,21 +14,20 @@ import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
 import { registerServiceWorker } from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
-import { Plus, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, Check, AlertCircle, Loader2, Search, X } from 'lucide-react';
 import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine';
 import { resolvePhotoUrl } from './utils/photoUtils';
 import { useAuth } from './AuthContext';
 import { LoginScreen } from './LoginScreen';
 import { OnThisDayView } from './components/OnThisDayView';
+import { TechDocsModal } from './components/TechDocsModal';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
+import { GlobalSearchModal } from './components/GlobalSearchModal';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 
-export default function App() {
-  
+function AuthenticatedApp() {
   const { session, signOut } = useAuth();
-  if (!session) {
-    return <LoginScreen />;
-  }
   
   // Navigation & View State
   const [currentView, setCurrentView] = useState<'dashboard' | 'reports' | 'on-this-day'>(
@@ -85,8 +84,13 @@ export default function App() {
 
   // Modals & UI States
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
+  const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState<boolean>(false);
   const [isSchemaModalOpen, setIsSchemaModalOpen] = useState<boolean>(false);
+  const [isTechDocsOpen, setIsTechDocsOpen] = useState<boolean>(false);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState<boolean>(false);
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [dashboardSearch, setDashboardSearch] = useState<string>('');
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -94,6 +98,37 @@ export default function App() {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  // Global keyboard shortcut: Cmd+K / Ctrl+K opens Search Palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSelectSearchResult = (log: DailyLog) => {
+    setIsSearchOpen(false);
+    setSelectedDate(log.log_date);
+    setCurrentView('dashboard');
+    window.history.pushState(null, '', '/');
+    setEditingLog(log);
+    setIsLogModalOpen(true);
+  };
+
+  const filteredCurrentDateLogs = useMemo(() => {
+    if (!dashboardSearch.trim()) return currentDateLogs;
+    const clean = dashboardSearch.trim().toLowerCase().normalize('NFC');
+    return currentDateLogs.filter((log) => {
+      const notes = (log.notes || '').toLowerCase().normalize('NFC');
+      const catName = (log.category?.name || '').toLowerCase().normalize('NFC');
+      return notes.includes(clean) || catName.includes(clean);
+    });
+  }, [currentDateLogs, dashboardSearch]);
 
   // PWA Setup
   useEffect(() => {
@@ -210,15 +245,34 @@ export default function App() {
 
   const handleSaveLog = async (formData: FormData) => {
     try {
+      const existingId = formData.get('id') as string | null;
       const category_id = formData.get('category_id') as string;
       const log_date = formData.get('log_date') as string;
       const notes = (formData.get('notes') as string) || '';
+      const removePhoto = formData.get('remove_photo') === 'true';
+      const keepExistingPhoto = formData.get('keep_existing_photo') === 'true';
       
       // Grab the raw/compressed File object and data URL from the form
       const photoFile = formData.get('photo') as File | null;
       const photoData = formData.get('photo_data') as string | null;
       
-      const logId = crypto.randomUUID();
+      const logId = existingId || crypto.randomUUID();
+      const existing = existingId ? await db.dailyLogs.get(existingId) : null;
+      const now = new Date().toISOString();
+
+      let resolvedPhotoUrl = photoData || null;
+      let resolvedPhotoData = photoData || null;
+      let resolvedPhotoStoragePath = null;
+
+      if (removePhoto) {
+        resolvedPhotoUrl = null;
+        resolvedPhotoData = null;
+        resolvedPhotoStoragePath = null;
+      } else if (keepExistingPhoto && existing) {
+        resolvedPhotoUrl = existing.photo_url || null;
+        resolvedPhotoData = existing.photo_data || null;
+        resolvedPhotoStoragePath = existing.photo_storage_path || null;
+      }
       
       await db.transaction('rw', db.dailyLogs, db.syncQueue, async () => {
         await db.dailyLogs.put({
@@ -226,19 +280,21 @@ export default function App() {
           log_date,
           category_id,
           notes,
-          status: 'present',
-          photo_url: photoData || null,
-          photo_data: photoData || null,
-          local_photo: photoFile || undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          status: existing?.status || 'present',
+          photo_url: resolvedPhotoUrl,
+          photo_data: resolvedPhotoData,
+          photo_storage_path: resolvedPhotoStoragePath,
+          local_photo: photoFile || (keepExistingPhoto && existing?.local_photo ? existing.local_photo : undefined),
+          created_at: existing ? existing.created_at : now,
+          updated_at: now,
         });
         
         await db.syncQueue.put({ id: logId, table: 'daily_logs', action: 'upsert', timestamp: Date.now() });
       });
 
       setIsLogModalOpen(false);
-      showToast('Activity log & photo saved locally!');
+      setEditingLog(null);
+      showToast(existingId ? 'Activity log updated! ✅' : 'Activity log & photo saved locally!');
       // Kick off background sync immediately to upload photo & push to Supabase
       processSyncQueue().catch(e => console.warn('Background sync failed:', e));
     } catch (err) {
@@ -247,7 +303,13 @@ export default function App() {
     }
   };
 
-  const handleAddCategory = async (newCat: { name: string; color_code: string; icon: string; reminder_time?: string | null }) => {
+  const handleAddCategory = async (newCat: {
+    name: string;
+    color_code: string;
+    icon: string;
+    reminder_time?: string | null;
+    is_on_this_day?: boolean;
+  }) => {
     try {
       const newId = crypto.randomUUID();
       const categoryToSave = { ...newCat, id: newId, is_active: true } as Category;
@@ -393,9 +455,15 @@ export default function App() {
       <Header
         currentView={currentView}
         onViewChange={setCurrentView}
-        onOpenNewLog={() => setIsLogModalOpen(true)}
+        onOpenNewLog={() => {
+          setEditingLog(null);
+          setIsLogModalOpen(true);
+        }}
         onOpenSchema={() => setIsSchemaModalOpen(true)}
         onOpenCategories={() => setIsCategoryManagerOpen(true)}
+        onOpenTechDocs={() => setIsTechDocsOpen(true)}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+        onOpenSearch={() => setIsSearchOpen(true)}
         onLogout={handleLogout}
         authToken={authToken}
         onToast={showToast}
@@ -409,16 +477,58 @@ export default function App() {
           }} />
         ) : currentView === 'dashboard' ? (
           <div className="space-y-4">
+            {/* Quick Filter Bar */}
+            <div className="flex items-center gap-2 px-3.5 py-2 bg-white/70 backdrop-blur-md rounded-2xl border border-white/80 shadow-xs">
+              <Search className="w-4 h-4 text-blue-500 shrink-0" />
+              <input
+                id="input-dashboard-quick-filter"
+                type="text"
+                value={dashboardSearch}
+                onChange={(e) => setDashboardSearch(e.target.value)}
+                placeholder="Quick filter today's logs or press ⌘K to search all history..."
+                className="w-full bg-transparent text-xs font-semibold text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
+              />
+              {dashboardSearch && (
+                <button
+                  type="button"
+                  id="btn-clear-dashboard-filter"
+                  onClick={() => setDashboardSearch('')}
+                  className="p-1 text-neutral-400 hover:text-neutral-700 rounded-full"
+                  title="Clear filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                id="btn-open-global-search-dashboard"
+                onClick={() => setIsSearchOpen(true)}
+                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200/60 shrink-0 flex items-center gap-1.5"
+              >
+                <span>Search All</span>
+                <kbd className="hidden sm:inline font-mono text-[10px] text-blue-500 bg-white px-1 py-0.5 rounded border border-blue-200 shadow-2xs">
+                  ⌘K
+                </kbd>
+              </button>
+            </div>
+
             <DaySelector
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               logCountsByDate={logCountsByDate}
             />
             <ActivityFeed
-              logs={currentDateLogs}
+              logs={filteredCurrentDateLogs}
               isLoading={false}
               selectedDate={selectedDate}
-              onOpenNewLog={() => setIsLogModalOpen(true)}
+              onOpenNewLog={() => {
+                setEditingLog(null);
+                setIsLogModalOpen(true);
+              }}
+              onEditLog={(log) => {
+                setEditingLog(log);
+                setIsLogModalOpen(true);
+              }}
               onDeleteLog={handleDeleteLog}
               onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
             />
@@ -436,7 +546,10 @@ export default function App() {
 
       <div className="fixed bottom-6 right-6 z-40">
         <button
-          onClick={() => setIsLogModalOpen(true)}
+          onClick={() => {
+            setEditingLog(null);
+            setIsLogModalOpen(true);
+          }}
           className="w-14 h-14 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all group focus:outline-none focus:ring-4 focus:ring-blue-500/30"
         >
           <Plus className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
@@ -445,9 +558,13 @@ export default function App() {
 
       <LogModal
         isOpen={isLogModalOpen}
-        onClose={() => setIsLogModalOpen(false)}
+        onClose={() => {
+          setIsLogModalOpen(false);
+          setEditingLog(null);
+        }}
         categories={categories}
         selectedDate={selectedDate}
+        editingLog={editingLog}
         onSaveLog={handleSaveLog}
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
@@ -472,7 +589,24 @@ export default function App() {
         onClose={() => setLightboxPhoto(null)}
       />
 
+      <GlobalSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        logs={allLogs}
+        categories={categories}
+        onSelectLog={handleSelectSearchResult}
+        onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
+      />
+
       <VercelSchemaModal isOpen={isSchemaModalOpen} onClose={() => setIsSchemaModalOpen(false)} />
+
+      <TechDocsModal isOpen={isTechDocsOpen} onClose={() => setIsTechDocsOpen(false)} />
+
+      <NotificationSettingsModal
+        isOpen={isNotificationSettingsOpen}
+        onClose={() => setIsNotificationSettingsOpen(false)}
+        authToken={authToken}
+      />
 
       {toastMessage && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
@@ -484,4 +618,12 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const { session } = useAuth();
+  if (!session) {
+    return <LoginScreen />;
+  }
+  return <AuthenticatedApp />;
 }

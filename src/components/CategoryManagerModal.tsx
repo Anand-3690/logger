@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Category } from '../types';
+import { Category, isCategoryOnThisDay } from '../types';
 import { CategoryIcon } from './CategoryIcon';
 import { IconPicker } from './IconPicker';
 import {
@@ -13,6 +13,7 @@ import {
   Bell,
   Clock,
   Check,
+  History,
 } from 'lucide-react';
 
 interface CategoryManagerModalProps {
@@ -24,6 +25,7 @@ interface CategoryManagerModalProps {
     color_code: string;
     icon: string;
     reminder_time?: string | null;
+    is_on_this_day?: boolean;
   }) => Promise<Category>;
   onUpdateCategory?: (id: string, updates: Partial<Category>) => Promise<Category>;
   onDeleteCategory: (id: string) => Promise<void>;
@@ -85,6 +87,7 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
   const [editingReminderCatId, setEditingReminderCatId] = useState<string | null>(null);
   const [tempReminderTime, setTempReminderTime] = useState<string>('');
   const [isUpdatingReminder, setIsUpdatingReminder] = useState<boolean>(false);
+  const [isOnThisDay, setIsOnThisDay] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -100,9 +103,11 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
         color_code: colorCode,
         icon: iconName,
         reminder_time: reminderTime ? reminderTime.trim() : null,
+        is_on_this_day: isOnThisDay,
       });
       setName('');
       setReminderTime('');
+      setIsOnThisDay(false);
       setIsCreating(false);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to create category');
@@ -355,6 +360,34 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
                 />
               </div>
 
+              {/* On This Day Option */}
+              <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-neutral-200/80">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-purple-600" />
+                  <div>
+                    <span className="text-xs font-bold text-neutral-800 block leading-tight">
+                      Include in &quot;On This Day&quot;
+                    </span>
+                    <span className="text-[10px] text-neutral-400">
+                      Show past memories and dispatch anniversary notifications
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOnThisDay((prev) => !prev)}
+                  className={`w-9 h-5 rounded-full transition-colors relative ${
+                    isOnThisDay ? 'bg-purple-600' : 'bg-neutral-200'
+                  }`}
+                >
+                  <span
+                    className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-transform ${
+                      isOnThisDay ? 'left-5' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* Submit & Cancel */}
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -408,12 +441,18 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
                           <CategoryIcon name={cat.icon} className="w-4 h-4 text-white" />
                         </div>
                         <div>
-                          <div className="text-xs sm:text-sm font-bold text-neutral-900 flex items-center gap-2">
+                          <div className="text-xs sm:text-sm font-bold text-neutral-900 flex items-center gap-2 flex-wrap">
                             <span>{cat.name}</span>
                             {cat.reminder_time && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
                                 <Bell className="w-2.5 h-2.5 text-blue-600" />
                                 {formatTimeDisplay(cat.reminder_time)}
+                              </span>
+                            )}
+                            {(cat.is_on_this_day || cat.name === 'Guruhari Darshan') && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                                <History className="w-2.5 h-2.5 text-purple-600" />
+                                On This Day
                               </span>
                             )}
                           </div>
@@ -424,6 +463,29 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1">
+                        {onUpdateCategory && (
+                          <button
+                            type="button"
+                            id={`btn-toggle-on-this-day-${cat.id}`}
+                            onClick={() =>
+                              onUpdateCategory(cat.id, {
+                                is_on_this_day: !isCategoryOnThisDay(cat),
+                              })
+                            }
+                            title={
+                              isCategoryOnThisDay(cat)
+                                ? 'Included in On This Day (Click to remove)'
+                                : 'Not in On This Day (Click to include)'
+                            }
+                            className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors ${
+                              isCategoryOnThisDay(cat)
+                                ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200/60'
+                                : 'text-neutral-400 hover:text-purple-600 hover:bg-purple-50'
+                            }`}
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           id={`btn-edit-reminder-${cat.id}`}

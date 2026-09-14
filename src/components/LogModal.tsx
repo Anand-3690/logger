@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Category } from '../types';
+import { Category, DailyLog } from '../types';
 import { CategoryIcon } from './CategoryIcon';
 import { IconPicker } from './IconPicker';
 import { compressImage } from '../utils/imageCompressor';
@@ -15,6 +15,9 @@ import {
   PlusCircle,
   Trash2,
   Settings2,
+  Pencil,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface LogModalProps {
@@ -22,12 +25,14 @@ interface LogModalProps {
   onClose: () => void;
   categories: Category[];
   selectedDate: string;
+  editingLog?: DailyLog | null;
   onSaveLog: (formData: FormData) => Promise<void>;
   onAddCategory: (category: {
     name: string;
     color_code: string;
     icon: string;
     reminder_time?: string | null;
+    is_on_this_day?: boolean;
   }) => Promise<Category>;
   onDeleteCategory?: (id: string) => Promise<void>;
   onOpenCategoryManager?: () => void;
@@ -49,6 +54,7 @@ export const LogModal: React.FC<LogModalProps> = ({
   onClose,
   categories,
   selectedDate,
+  editingLog,
   onSaveLog,
   onAddCategory,
   onDeleteCategory,
@@ -75,27 +81,53 @@ export const LogModal: React.FC<LogModalProps> = ({
   // Photo compression & data state
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState<boolean>(false);
+  const [isPhotoRemoved, setIsPhotoRemoved] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isNotesExpanded, setIsNotesExpanded] = useState<boolean>(false);
   const prevIsOpenRef = useRef<boolean>(false);
+
+  // Auto-grow textarea with content
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const minH = isNotesExpanded ? 280 : 140;
+      textareaRef.current.style.height = `${Math.max(textareaRef.current.scrollHeight, minH)}px`;
+    }
+  }, [notes, isNotesExpanded]);
 
   // Reset and initialize only when modal transitions from closed to open
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
-      // Fresh modal open: reset form inputs
-      setLogDate(selectedDate);
-      setNotes('');
-      setPhotoFile(null);
-      setPhotoPreview(null);
-      setPhotoDataUrl(null);
-      setIsCompressingPhoto(false);
-      setErrorMsg(null);
-      setIsCreatingCategory(false);
+      if (editingLog) {
+        setLogDate(editingLog.log_date);
+        setSelectedCategoryId(editingLog.category_id);
+        setNotes(editingLog.notes || '');
+        setPhotoFile(null);
+        setPhotoPreview(editingLog.photo_url || editingLog.photo_data || null);
+        setPhotoDataUrl(editingLog.photo_data || null);
+        setIsPhotoRemoved(false);
+        setIsCompressingPhoto(false);
+        setErrorMsg(null);
+        setIsCreatingCategory(false);
+      } else {
+        // Fresh modal open: reset form inputs
+        setLogDate(selectedDate);
+        setNotes('');
+        setPhotoFile(null);
+        setPhotoPreview(null);
+        setPhotoDataUrl(null);
+        setIsPhotoRemoved(false);
+        setIsCompressingPhoto(false);
+        setErrorMsg(null);
+        setIsCreatingCategory(false);
 
-      if (categories.length > 0) {
-        const exists = categories.some((c) => c.id === selectedCategoryId);
-        if (!exists) {
-          setSelectedCategoryId(categories[0].id);
+        if (categories.length > 0) {
+          const exists = categories.some((c) => c.id === selectedCategoryId);
+          if (!exists) {
+            setSelectedCategoryId(categories[0].id);
+          }
         }
       }
     } else if (isOpen) {
@@ -108,7 +140,7 @@ export const LogModal: React.FC<LogModalProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, selectedDate, categories, selectedCategoryId]);
+  }, [isOpen, selectedDate, categories, selectedCategoryId, editingLog]);
 
   if (!isOpen) return null;
 
@@ -117,6 +149,7 @@ export const LogModal: React.FC<LogModalProps> = ({
     if (file) {
       try {
         setIsCompressingPhoto(true);
+        setIsPhotoRemoved(false);
         setErrorMsg(null);
         // Compress image to standard JPEG (max 1600px, quality 0.82)
         const compressed = await compressImage(file, 1600, 0.82);
@@ -141,6 +174,7 @@ export const LogModal: React.FC<LogModalProps> = ({
   const handleRemovePhoto = () => {
     setPhotoFile(null);
     setPhotoDataUrl(null);
+    setIsPhotoRemoved(true);
     if (photoPreview && photoPreview.startsWith('blob:')) {
       URL.revokeObjectURL(photoPreview);
     }
@@ -207,6 +241,9 @@ export const LogModal: React.FC<LogModalProps> = ({
       setErrorMsg(null);
 
       const formData = new FormData();
+      if (editingLog) {
+        formData.append('id', editingLog.id);
+      }
       formData.append('category_id', selectedCategoryId);
       formData.append('log_date', logDate);
       if (notes.trim()) {
@@ -217,6 +254,11 @@ export const LogModal: React.FC<LogModalProps> = ({
       }
       if (photoDataUrl) {
         formData.append('photo_data', photoDataUrl);
+      }
+      if (isPhotoRemoved) {
+        formData.append('remove_photo', 'true');
+      } else if (editingLog && !photoFile && (editingLog.photo_url || editingLog.photo_data)) {
+        formData.append('keep_existing_photo', 'true');
       }
 
       await onSaveLog(formData);
@@ -232,20 +274,26 @@ export const LogModal: React.FC<LogModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-md transition-opacity animate-in fade-in duration-200">
       <div
         id="modal-log-activity"
-        className="glass-modal rounded-3xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+        className={`glass-modal rounded-3xl w-full transition-all duration-200 overflow-hidden flex flex-col max-h-[92vh] ${
+          isNotesExpanded ? 'max-w-2xl' : 'max-w-xl'
+        }`}
       >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between bg-white/40 backdrop-blur-sm">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
-              <Sparkles className="w-4 h-4" />
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs ${
+              editingLog
+                ? 'bg-gradient-to-br from-amber-600 to-orange-600'
+                : 'bg-gradient-to-br from-blue-600 to-indigo-600'
+            }`}>
+              {editingLog ? <Pencil className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
             </div>
             <div>
               <h3 className="text-base font-bold text-neutral-900 leading-tight">
-                Log Daily Activity
+                {editingLog ? 'Edit Activity Log' : 'Log Daily Activity'}
               </h3>
               <p className="text-xs text-neutral-500 font-medium">
-                Record your work, fitness, reading, and habits
+                {editingLog ? 'Update details, timestamp, or photos for this record' : 'Record your work, fitness, reading, and habits'}
               </p>
             </div>
           </div>
@@ -397,8 +445,8 @@ export const LogModal: React.FC<LogModalProps> = ({
               </div>
             )}
 
-            {/* Grid of Active Categories */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Compact, Scrollable Grid of Active Categories */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-40 sm:max-h-48 overflow-y-auto p-1.5 rounded-2xl border border-neutral-200/70 bg-neutral-50/50">
               {categories.map((cat) => {
                 const isSelected = selectedCategoryId === cat.id;
                 return (
@@ -407,43 +455,39 @@ export const LogModal: React.FC<LogModalProps> = ({
                     type="button"
                     id={`category-btn-${cat.id}`}
                     onClick={() => setSelectedCategoryId(cat.id)}
-                    className={`flex items-center sm:flex-col justify-between sm:justify-center p-3 rounded-2xl border transition-all text-left sm:text-center relative gap-2 group ${
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-center relative gap-1.5 group ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-50/70 shadow-xs ring-2 ring-blue-600/30'
-                        : 'border-neutral-200/80 bg-white hover:bg-neutral-50'
+                        ? 'border-blue-600 bg-blue-50/90 shadow-2xs ring-2 ring-blue-600/30'
+                        : 'border-neutral-200/80 bg-white hover:bg-neutral-50 hover:border-neutral-300'
                     }`}
                   >
-                    <div className="flex items-center sm:flex-col gap-2.5 sm:gap-1.5">
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs"
-                        style={{ backgroundColor: cat.color_code }}
+                    <div
+                      className="w-7 h-7 sm:w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 shadow-2xs"
+                      style={{ backgroundColor: cat.color_code }}
+                    >
+                      <CategoryIcon name={cat.icon} className="w-3.5 h-3.5 sm:w-4 h-4 text-white" />
+                    </div>
+                    <span className="text-[11px] font-bold text-neutral-800 leading-tight truncate w-full text-center px-0.5">
+                      {cat.name}
+                    </span>
+
+                    {/* Delete category icon button */}
+                    {onDeleteCategory && (
+                      <span
+                        role="button"
+                        onClick={(e) => handleDeleteCategoryQuick(e, cat.id)}
+                        title={`Delete category "${cat.name}"`}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all absolute top-1 left-1"
                       >
-                        <CategoryIcon name={cat.icon} className="w-4 h-4 text-white" />
-                      </div>
-                      <span className="text-xs font-bold text-neutral-800 leading-tight">
-                        {cat.name}
+                        <Trash2 className="w-3 h-3" />
                       </span>
-                    </div>
+                    )}
 
-                    <div className="flex items-center gap-1.5">
-                      {/* Delete category icon button */}
-                      {onDeleteCategory && (
-                        <span
-                          role="button"
-                          onClick={(e) => handleDeleteCategoryQuick(e, cat.id)}
-                          title={`Delete category "${cat.name}"`}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all sm:absolute sm:top-1.5 sm:left-1.5"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </span>
-                      )}
-
-                      {isSelected && (
-                        <div className="sm:absolute sm:top-2 sm:right-2 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center text-white shrink-0">
-                          <Check className="w-2.5 h-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 w-3.5 h-3.5 bg-blue-600 rounded-full flex items-center justify-center text-white shrink-0">
+                        <Check className="w-2 h-2 stroke-[3]" />
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -456,35 +500,60 @@ export const LogModal: React.FC<LogModalProps> = ({
             )}
           </div>
 
-          {/* 3. Optional Notes Area */}
+          {/* 3. Generous, Expandable Notes & Reflections Area */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-600">
-                Notes & Reflections (Optional)
+            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+                <span>Notes & Reflections</span>
+                <span className="text-[10px] font-normal text-neutral-400 lowercase">(optional)</span>
               </label>
-              <span className="text-[11px] text-neutral-400 font-medium">
-                {notes.length} characters
-              </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-[10px] sm:text-[11px] text-neutral-400 font-medium">
+                  {notes.length} chars {notes.trim() ? `• ${notes.trim().split(/\s+/).length}w` : ''}
+                </span>
+                <button
+                  type="button"
+                  id="btn-toggle-expand-notes"
+                  onClick={() => setIsNotesExpanded(!isNotesExpanded)}
+                  title={isNotesExpanded ? 'Collapse notes area' : 'Expand notes area for focused writing'}
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 bg-blue-50/80 hover:bg-blue-100/80 px-2 py-0.5 rounded-lg border border-blue-200/60 transition-colors cursor-pointer"
+                >
+                  {isNotesExpanded ? (
+                    <>
+                      <Minimize2 className="w-3 h-3" />
+                      <span>Compact</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="w-3 h-3" />
+                      <span>Expand</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
             <textarea
+              ref={textareaRef}
               id="input-log-notes"
-              rows={3}
+              rows={isNotesExpanded ? 12 : 6}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="What did you work on, read, or accomplish during this session?"
-              className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs sm:text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"
+              placeholder="What did you work on, read, or accomplish? Write your notes, reflections, insights, or details in Gujarati or English..."
+              className={`w-full px-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm sm:text-base text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-y leading-relaxed font-sans shadow-2xs ${
+                isNotesExpanded ? 'min-h-[280px] sm:min-h-[360px]' : 'min-h-[140px] sm:min-h-[170px]'
+              }`}
             />
           </div>
 
-          {/* 4. Photo Upload Area */}
+          {/* 4. Compact Photo Upload Area */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
               Attach Photo / Snapshot (Optional)
             </label>
 
             {isCompressingPhoto ? (
-              <div className="border border-neutral-200 rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-2 bg-neutral-50">
-                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              <div className="border border-neutral-200 rounded-2xl p-4 text-center flex flex-col items-center justify-center gap-1.5 bg-neutral-50">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
                 <span className="text-xs font-semibold text-neutral-700">
                   Optimizing photo for mobile...
                 </span>
@@ -494,7 +563,7 @@ export const LogModal: React.FC<LogModalProps> = ({
                 <img
                   src={photoPreview}
                   alt="Upload preview"
-                  className="w-full h-40 object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                  className="w-full h-36 object-cover opacity-90 group-hover:opacity-100 transition-opacity"
                 />
                 <button
                   type="button"
@@ -512,16 +581,23 @@ export const LogModal: React.FC<LogModalProps> = ({
             ) : (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-neutral-200 hover:border-blue-400 hover:bg-blue-50/30 rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5"
+                className="border border-dashed border-neutral-300 hover:border-blue-500 hover:bg-blue-50/20 rounded-xl px-3.5 py-2.5 cursor-pointer transition-all flex items-center justify-between gap-3 bg-neutral-50/70 group"
               >
-                <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Upload className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 flex items-center justify-center shrink-0 transition-colors">
+                    <Camera className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs font-semibold text-neutral-700 group-hover:text-blue-700 transition-colors">
+                      Tap to attach photo or snapshot
+                    </div>
+                    <div className="text-[10px] text-neutral-400">
+                      JPG, PNG, HEIC, WebP (auto-optimized)
+                    </div>
+                  </div>
                 </div>
-                <span className="text-xs font-semibold text-neutral-700">
-                  Tap to upload photo or take picture
-                </span>
-                <span className="text-[11px] text-neutral-400">
-                  PNG, JPG, HEIC, WebP (auto-optimized)
+                <span className="text-[11px] font-bold text-blue-600 bg-white border border-neutral-200 px-2.5 py-1 rounded-lg shadow-2xs group-hover:bg-blue-50 transition-colors shrink-0">
+                  Browse
                 </span>
                 <input
                   ref={fileInputRef}
@@ -535,12 +611,12 @@ export const LogModal: React.FC<LogModalProps> = ({
             )}
           </div>
 
-          {/* Modal Actions */}
-          <div className="pt-2 flex items-center justify-end gap-3 border-t border-neutral-100">
+          {/* Sticky Modal Actions Footer */}
+          <div className="sticky bottom-0 -mx-5 -mb-5 px-5 py-3 bg-white/95 backdrop-blur-md border-t border-neutral-100/90 flex items-center justify-end gap-3 z-10 shadow-xs">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl transition-colors"
+              className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -548,17 +624,17 @@ export const LogModal: React.FC<LogModalProps> = ({
               type="submit"
               id="btn-submit-save-log"
               disabled={isSubmitting || !selectedCategoryId}
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-blue-500/25"
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-97 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm shadow-blue-500/25 cursor-pointer"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving to Database...</span>
+                  <span>{editingLog ? 'Updating Log...' : 'Saving to Database...'}</span>
                 </>
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>Save Log</span>
+                  <span>{editingLog ? 'Update Log' : 'Save Log'}</span>
                 </>
               )}
             </button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText, History } from 'lucide-react';
+import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText, History, Search } from 'lucide-react';
 import { NotificationToggle } from './NotificationToggle';
 
 interface HeaderProps {
@@ -9,6 +9,8 @@ interface HeaderProps {
   onOpenSchema: () => void;
   onOpenCategories?: () => void;
   onOpenTechDocs?: () => void;
+  onOpenNotificationSettings?: () => void;
+  onOpenSearch?: () => void;
   onLogout?: () => void;
   authToken?: string | null;
   onToast?: (message: string, type: 'success' | 'error') => void;
@@ -21,6 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSchema,
   onOpenCategories,
   onOpenTechDocs,
+  onOpenNotificationSettings,
+  onOpenSearch,
   onLogout,
   authToken,
   onToast,
@@ -45,6 +49,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls & Navigation Switcher */}
         <div className="flex items-center gap-2">
+          {/* Global Search Button */}
+          {onOpenSearch && (
+            <button
+              id="btn-header-search"
+              onClick={onOpenSearch}
+              title="Search past logs, memories, and notes (Ctrl+K)"
+              className="px-2.5 py-1.5 text-neutral-600 hover:text-neutral-900 bg-white/60 hover:bg-white/90 backdrop-blur-md rounded-xl border border-white/80 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <Search className="w-4 h-4 text-blue-600" />
+              <span className="hidden md:inline">Search</span>
+              <kbd className="hidden lg:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-neutral-400 bg-neutral-100 rounded border border-neutral-200 shadow-2xs">
+                ⌘K
+              </kbd>
+            </button>
+          )}
+
           {/* View Toggle Tabs */}
           <div className="flex items-center p-1 bg-white/60 backdrop-blur-md rounded-xl border border-white/80 shadow-xs text-xs font-semibold">
             <button
@@ -89,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Compact Notification Toggle */}
-          <NotificationToggle authToken={authToken} onToast={onToast} />
+          <NotificationToggle authToken={authToken} onToast={onToast} onOpenSettings={onOpenNotificationSettings} />
 
           {/* Manage Categories Button */}
           {onOpenCategories && (

@@ -1,13 +1,104 @@
-// Service Worker for Daily Accomplishments PWA & Push Notifications
+// Service Worker for Daily Accomplishments PWA, Shell Caching & Push Notifications
+
+const CACHE_NAME = 'daily-logger-shell-v1';
+const PRECACHE_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/assets/icon-192.png',
+  '/assets/icon-512.png',
+  '/assets/icon.svg',
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  console.log('[SW] Service Worker installed');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Pre-caching offline application shell assets');
+      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+        console.warn('[SW] Pre-cache partial fail (non-fatal):', err);
+      });
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    }).then(() => self.clients.claim())
+  );
   console.log('[SW] Service Worker activated and claimed clients');
+});
+
+// Offline Fetch Interceptor: Stale-While-Revalidate for Assets, Network-First for SPA Navigation
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // 1. Ignore non-GET requests
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // 2. Ignore backend APIs, Supabase cloud queries, and dev-server HMR / source modules
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('supabase.co') ||
+    url.protocol.startsWith('chrome-extension') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@') ||
+    url.search.includes('import') ||
+    url.pathname.endsWith('.tsx') ||
+    url.pathname.endsWith('.ts')
+  ) {
+    return;
+  }
+
+  // 3. For SPA HTML navigation requests: Network-First with cached /index.html offline fallback
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          console.log('[SW] Offline: serving cached application shell /index.html');
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match('/index.html') || await cache.match('/');
+          if (cached) return cached;
+          return new Response('<h1>Offline</h1><p>Daily Activity Logger shell is available offline.</p>', {
+            headers: { 'Content-Type': 'text/html' },
+          });
+        })
+    );
+    return;
+  }
+
+  // 4. For static assets (JS, CSS, images, icons, fonts): Stale-While-Revalidate
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return cachedResponse;
+        });
+
+      return cachedResponse || fetchPromise;
+    })
+  );
 });
 
 // 1. Listen for incoming Web Push notifications

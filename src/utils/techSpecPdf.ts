@@ -1,34 +1,10 @@
 import jsPDF from 'jspdf';
+import { processPdfExport, type PdfExportResult } from './downloadPdf';
 
 /**
- * Downloads a Blob safely across desktop, mobile, and iframe sandboxes
+ * Builds the complete multi-page Technical Architecture & System Specification jsPDF document
  */
-function downloadBlob(blob: Blob, filename: string) {
-  try {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1000);
-  } catch (err) {
-    console.warn('[PDF Download] Fallback window.open:', err);
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  }
-}
-
-/**
- * Generates a multi-page Technical Architecture & System Specification PDF
- */
-export function generateTechSpecPDF(): boolean {
+export function buildTechSpecPdfDoc(): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -459,8 +435,13 @@ export function generateTechSpecPDF(): boolean {
   // Final footer on last page
   drawFooter();
 
-  // Trigger Download
-  const pdfBlob = doc.output('blob');
-  downloadBlob(pdfBlob, 'Activity_Tracker_System_Architecture_Spec.pdf');
-  return true;
+  return doc;
+}
+
+/**
+ * Generates and triggers the multi-tier download for the Tech Spec PDF
+ */
+export function generateTechSpecPDF(): PdfExportResult {
+  const doc = buildTechSpecPdfDoc();
+  return processPdfExport(doc, 'Activity_Tracker_System_Architecture_Spec.pdf');
 }

@@ -44,7 +44,7 @@ async function adaptiveUpsert(
     }
 
     // Check common optional columns if mentioned in error
-    const candidateColumns = ['photo_url', 'photo_data', 'photo_storage_path', 'updated_at', 'reminder_time', 'notes', 'status', 'icon', 'color_code', 'is_active'];
+    const candidateColumns = ['photo_url', 'photo_data', 'photo_storage_path', 'updated_at', 'reminder_time', 'notes', 'status', 'icon', 'color_code', 'is_active', 'is_on_this_day'];
     for (const col of candidateColumns) {
       if (msg.toLowerCase().includes(col) && payload[col] !== undefined) {
         delete payload[col];
@@ -93,6 +93,7 @@ export const processSyncQueue = async () => {
                 icon: record.icon,
                 reminder_time: record.reminder_time || null,
                 is_active: record.is_active ?? true,
+                is_on_this_day: record.is_on_this_day ?? false,
               });
               if (error) throw error;
             }
@@ -110,6 +111,7 @@ export const processSyncQueue = async () => {
                     icon: parentCat.icon,
                     reminder_time: parentCat.reminder_time || null,
                     is_active: parentCat.is_active ?? true,
+                    is_on_this_day: parentCat.is_on_this_day ?? false,
                   });
                 }
               }

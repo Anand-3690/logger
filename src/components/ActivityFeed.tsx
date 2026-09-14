@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { DailyLog } from '../types';
 import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
-import { Trash2, Plus, Clock, Check, X, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Clock, Check, X, Loader2, Pencil } from 'lucide-react';
 
 interface ActivityFeedProps {
   logs: DailyLog[];
   isLoading: boolean;
   selectedDate: string;
   onOpenNewLog: () => void;
+  onEditLog?: (log: DailyLog) => void;
   onDeleteLog: (id: string) => Promise<void> | void;
   onViewPhoto: (url: string, title?: string) => void;
 }
@@ -18,6 +19,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   isLoading,
   selectedDate,
   onOpenNewLog,
+  onEditLog,
   onDeleteLog,
   onViewPhoto,
 }) => {
@@ -186,15 +188,28 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    id={`btn-delete-log-${log.id}`}
-                    onClick={() => setConfirmingDeleteId(log.id)}
-                    title="Delete log"
-                    className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50/80 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-0.5">
+                    {onEditLog && (
+                      <button
+                        type="button"
+                        id={`btn-edit-log-${log.id}`}
+                        onClick={() => onEditLog(log)}
+                        title="Edit log entry"
+                        className="p-1.5 text-neutral-400 hover:text-blue-600 hover:bg-blue-50/80 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      id={`btn-delete-log-${log.id}`}
+                      onClick={() => setConfirmingDeleteId(log.id)}
+                      title="Delete log"
+                      className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50/80 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

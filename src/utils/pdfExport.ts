@@ -1,27 +1,6 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
-// 1. downloadBlob Helper
-function downloadBlob(blob: Blob, filename: string) {
-  try {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1000);
-  } catch (err) {
-    console.warn('[PDF Export] Direct link click failed, trying window open fallback:', err);
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  }
-}
+import { processPdfExport, type PdfExportResult } from './downloadPdf';
 
 // 2. prepareCleanExportNode (Safe Sanitizer & Smart Pagination)
 function prepareCleanExportNode(sourceElement: HTMLElement): { clone: HTMLElement; cleanup: () => void } {
@@ -281,9 +260,7 @@ export function generateNativeVectorPDF(
     });
   }
 
-  const blob = pdf.output('blob');
-  downloadBlob(blob, filename);
-  return true;
+  return processPdfExport(pdf, filename);
 }
 
 // 4. exportReportToPDF (The Main Visual Engine)
@@ -369,9 +346,7 @@ export async function exportReportToPDF(
       heightLeft -= renderHeight;
     }
 
-    const pdfBlob = pdf.output('blob');
-    downloadBlob(pdfBlob, filename);
-    return true;
+    return processPdfExport(pdf, filename);
   } catch (err) {
     console.warn('[PDF Export] html2canvas export encountered issue, using vector generator fallback:', err);
     if (fallbackData) {
