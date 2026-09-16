@@ -31,7 +31,7 @@ export function resolvePhotoUrl(log: any): string | null {
   const path = log.photo_storage_path || log.photo_url;
   if (path && typeof path === 'string') {
     const cleanPath = path.replace(/^log_photos\//, '').replace(/^\/+/, '');
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://bpvfvitncpyioaomaqsw.supabase.co';
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
     return `${supabaseUrl}/storage/v1/object/public/log_photos/${cleanPath}`;
   }
 
