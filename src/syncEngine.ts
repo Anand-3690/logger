@@ -3,6 +3,8 @@ import { supabase } from './supabaseClient';
 
 let isSyncing = false;
 let isPulling = false;
+let lastPullTime = 0;
+const MIN_PULL_INTERVAL_MS = 15000; // Throttle to at most once per 15s
 
 // Helper to convert base64 data URL to a JPEG Blob
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
@@ -180,7 +182,7 @@ export const processSyncQueue = async () => {
                 status: record.status || 'present',
                 photo_url: cloudPhotoUrl || (record.photo_url && record.photo_url.startsWith('http') ? record.photo_url : null),
                 photo_storage_path: uploadSucceeded ? photoStoragePath : null,
-                photo_data: (record as any).photo_data || null,
+                photo_data: null, // Avoid storing heavy base64 strings in PostgreSQL; images belong in Supabase Storage
                 created_at: record.created_at,
                 updated_at: record.updated_at || new Date().toISOString(),
               };
@@ -240,9 +242,15 @@ export const processSyncQueue = async () => {
  * - Inserts/updates records created or modified on other devices
  * - Reconciles deletions by removing local records that no longer exist in cloud
  */
-export const pullFromCloud = async () => {
+export const pullFromCloud = async (force: boolean = false) => {
   if (isPulling || !navigator.onLine) return;
+
+  const now = Date.now();
+  if (!force && now - lastPullTime < MIN_PULL_INTERVAL_MS) {
+    return;
+  }
   isPulling = true;
+  lastPullTime = now;
 
   try {
     // 1. Fetch data from the cloud
@@ -251,10 +259,23 @@ export const pullFromCloud = async () => {
       .select('*');
     if (catError) throw catError;
 
-    const { data: remoteLogs, error: logError } = await supabase
+    // Targeted columns: omit photo_data (base64) to drastically reduce egress bandwidth
+    let remoteLogs: any[] | null = null;
+    const { data: logsData, error: logError } = await supabase
       .from('daily_logs')
-      .select('*');
-    if (logError) throw logError;
+      .select('id, log_date, category_id, notes, status, photo_url, photo_storage_path, created_at, updated_at');
+
+    if (logError) {
+      // Fallback if specific columns are missing in older remote schemas
+      console.warn('[SyncEngine] Targeted select failed, falling back to select(*):', logError.message);
+      const { data: fallbackLogs, error: fallbackError } = await supabase
+        .from('daily_logs')
+        .select('*');
+      if (fallbackError) throw fallbackError;
+      remoteLogs = fallbackLogs;
+    } else {
+      remoteLogs = logsData;
+    }
 
     // 2. Fetch local data and pending sync queue
     const existingLocalLogs = await db.dailyLogs.toArray();
@@ -377,8 +398,28 @@ export const setupRealtimeSync = () => {
         console.log('[Realtime] daily_logs change detected:', payload.eventType);
         if (payload.eventType === 'DELETE' && payload.old?.id) {
           await db.dailyLogs.delete(payload.old.id);
+        } else if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new?.id) {
+          // Direct local update from Realtime payload - avoids full table download!
+          const record = payload.new;
+          let resolvedUrl = record.photo_url || record.photo_storage_path || null;
+          if (
+            resolvedUrl &&
+            !resolvedUrl.startsWith('http://') &&
+            !resolvedUrl.startsWith('https://') &&
+            !resolvedUrl.startsWith('data:') &&
+            !resolvedUrl.startsWith('blob:')
+          ) {
+            const cleanPath = resolvedUrl.replace(/^log_photos\//, '').replace(/^\/+/, '');
+            resolvedUrl =
+              supabase.storage.from('log_photos').getPublicUrl(cleanPath)?.data?.publicUrl ||
+              resolvedUrl;
+          }
+          await db.dailyLogs.put({
+            ...record,
+            photo_url: resolvedUrl || record.photo_url || null,
+          } as import('./types').DailyLog);
         } else {
-          pullFromCloud().catch(console.warn);
+          pullFromCloud(true).catch(console.warn);
         }
       }
     )
@@ -389,8 +430,10 @@ export const setupRealtimeSync = () => {
         console.log('[Realtime] categories change detected:', payload.eventType);
         if (payload.eventType === 'DELETE' && payload.old?.id) {
           await db.categories.delete(payload.old.id);
+        } else if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new?.id) {
+          await db.categories.put(payload.new as any);
         } else {
-          pullFromCloud().catch(console.warn);
+          pullFromCloud(true).catch(console.warn);
         }
       }
     )

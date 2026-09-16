@@ -203,15 +203,17 @@ function AuthenticatedApp() {
     window.addEventListener('focus', performFullSync);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Poll the cloud every 10 seconds for seamless background synchronization
-    const interval = setInterval(performFullSync, 10000);
+    // Periodic check to flush unsynced local mutations (zero network egress when queue is empty)
+    const queueInterval = setInterval(() => {
+      processSyncQueue().catch(console.warn);
+    }, 30000);
 
     return () => {
       cleanupRealtime();
       window.removeEventListener('online', performFullSync);
       window.removeEventListener('focus', performFullSync);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(interval);
+      clearInterval(queueInterval);
     };
   }, []);
 
