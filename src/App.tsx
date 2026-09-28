@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { Category, DailyLog } from './types';
-import { Header } from './components/Header';
+import { AppNav } from './components/AppNav';
 import { DaySelector } from './components/DaySelector';
 import { ActivityFeed } from './components/ActivityFeed';
 import { LogModal } from './components/LogModal';
@@ -12,9 +12,15 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
-import { registerServiceWorker, checkAndTriggerDailyOnThisDay } from './utils/pushNotifications';
+import {
+  registerServiceWorker,
+  checkAndTriggerDailyOnThisDay,
+  getPushNotificationStatus,
+  subscribeToWebPush,
+  unsubscribeFromWebPush,
+} from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
-import { Plus, Check, AlertCircle, Loader2, Search, X } from 'lucide-react';
+import { Check, AlertCircle, Loader2 } from 'lucide-react';
 import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine';
 import { resolvePhotoUrl } from './utils/photoUtils';
 import { useAuth } from './AuthContext';
@@ -23,7 +29,6 @@ import { OnThisDayView } from './components/OnThisDayView';
 import { TechDocsModal } from './components/TechDocsModal';
 import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
-import { BottomNavBar } from './components/BottomNavBar';
 
 const AUTH_TOKEN_KEY = 'accomplishments_auth_token';
 
@@ -91,7 +96,6 @@ function AuthenticatedApp() {
   const [isTechDocsOpen, setIsTechDocsOpen] = useState<boolean>(false);
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
-  const [dashboardSearch, setDashboardSearch] = useState<string>('');
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -121,15 +125,55 @@ function AuthenticatedApp() {
     setIsLogModalOpen(true);
   };
 
-  const filteredCurrentDateLogs = useMemo(() => {
-    if (!dashboardSearch.trim()) return currentDateLogs;
-    const clean = dashboardSearch.trim().toLowerCase().normalize('NFC');
-    return currentDateLogs.filter((log) => {
-      const notes = (log.notes || '').toLowerCase().normalize('NFC');
-      const catName = (log.category?.name || '').toLowerCase().normalize('NFC');
-      return notes.includes(clean) || catName.includes(clean);
-    });
-  }, [currentDateLogs, dashboardSearch]);
+  // Push Notification State for AppNav indicator & toggle
+  const [notificationsOn, setNotificationsOn] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted' &&
+      localStorage.getItem('accomplishments_notifications_enabled') === 'true'
+    );
+  });
+
+  const checkNotificationsStatus = useCallback(async () => {
+    try {
+      const status = await getPushNotificationStatus();
+      setNotificationsOn(status.isSubscribed);
+    } catch (e) {
+      console.warn('Failed to query push status:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkNotificationsStatus();
+  }, [checkNotificationsStatus]);
+
+  const handleToggleNotifications = async () => {
+    try {
+      const status = await getPushNotificationStatus();
+      if (status.permission === 'denied') {
+        setIsNotificationSettingsOpen(true);
+        showToast('Notifications are blocked in browser settings', 'error');
+        return;
+      }
+      if (notificationsOn) {
+        await unsubscribeFromWebPush(authToken);
+        setNotificationsOn(false);
+        showToast('Notifications turned off', 'success');
+      } else {
+        await subscribeToWebPush(authToken);
+        const updated = await getPushNotificationStatus();
+        setNotificationsOn(updated.isSubscribed);
+        if (updated.isSubscribed) {
+          showToast('Notifications turned on! Reminders are active', 'success');
+        }
+      }
+    } catch (err: any) {
+      console.warn('Failed to toggle notifications:', err);
+      setIsNotificationSettingsOpen(true);
+      showToast(err?.message || 'Failed to update notification settings', 'error');
+    }
+  };
 
   // PWA Setup
   useEffect(() => {
@@ -477,26 +521,35 @@ function AuthenticatedApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-24 md:pb-12 relative overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/50 text-neutral-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-12 relative overflow-x-hidden">
       <div className="fixed top-[-80px] left-[-80px] w-96 h-96 bg-blue-300/25 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed top-1/3 right-[-100px] w-[28rem] h-[28rem] bg-indigo-300/20 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed bottom-[-60px] left-1/4 w-96 h-96 bg-sky-200/25 rounded-full blur-3xl pointer-events-none -z-10" />
 
-      <Header
-        currentView={currentView}
-        onViewChange={setCurrentView}
-        onOpenNewLog={() => {
+      <AppNav
+        route={currentView}
+        onNavigate={(route) => {
+          setCurrentView(route);
+          if (route === 'on-this-day') {
+            window.history.pushState(null, '', '/on-this-day');
+          } else if (route === 'reports') {
+            window.history.pushState(null, '', '/reports');
+          } else {
+            window.history.pushState(null, '', '/');
+          }
+        }}
+        onNewLog={() => {
           setEditingLog(null);
           setIsLogModalOpen(true);
         }}
-        onOpenSchema={() => setIsSchemaModalOpen(true)}
+        onSearch={() => setIsSearchOpen(true)}
         onOpenCategories={() => setIsCategoryManagerOpen(true)}
-        onOpenTechDocs={() => setIsTechDocsOpen(true)}
+        onToggleNotifications={handleToggleNotifications}
         onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onLogout={handleLogout}
-        authToken={authToken}
-        onToast={showToast}
+        onExportSpec={() => setIsTechDocsOpen(true)}
+        onOpenData={() => setIsSchemaModalOpen(true)}
+        onLock={handleLogout}
+        notificationsOn={notificationsOn}
       />
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:px-6 space-y-4">
@@ -507,48 +560,13 @@ function AuthenticatedApp() {
           }} />
         ) : currentView === 'dashboard' ? (
           <div className="space-y-4">
-            {/* Quick Filter Bar */}
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-white/70 backdrop-blur-md rounded-2xl border border-white/80 shadow-xs">
-              <Search className="w-4 h-4 text-blue-500 shrink-0" />
-              <input
-                id="input-dashboard-quick-filter"
-                type="text"
-                value={dashboardSearch}
-                onChange={(e) => setDashboardSearch(e.target.value)}
-                placeholder="Filter today's logs..."
-                className="w-full bg-transparent text-xs font-semibold text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
-              />
-              {dashboardSearch && (
-                <button
-                  type="button"
-                  id="btn-clear-dashboard-filter"
-                  onClick={() => setDashboardSearch('')}
-                  className="p-1 text-neutral-400 hover:text-neutral-700 rounded-full cursor-pointer"
-                  title="Clear filter"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <button
-                type="button"
-                id="btn-open-global-search-dashboard"
-                onClick={() => setIsSearchOpen(true)}
-                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200/60 shrink-0 flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>Search All</span>
-                <kbd className="hidden sm:inline font-mono text-[10px] text-blue-500 bg-white px-1 py-0.5 rounded border border-blue-200 shadow-2xs">
-                  ⌘K
-                </kbd>
-              </button>
-            </div>
-
             <DaySelector
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               logCountsByDate={logCountsByDate}
             />
             <ActivityFeed
-              logs={filteredCurrentDateLogs}
+              logs={currentDateLogs}
               isLoading={false}
               selectedDate={selectedDate}
               onOpenNewLog={() => {
@@ -573,38 +591,6 @@ function AuthenticatedApp() {
           />
         )}
       </main>
-
-      {/* Desktop Floating Action Button (Mobile uses sleek center button in BottomNavBar) */}
-      <div className="hidden md:flex fixed bottom-6 right-6 z-30">
-        <button
-          id="btn-fab-add-log"
-          onClick={() => {
-            setEditingLog(null);
-            setIsLogModalOpen(true);
-          }}
-          className="w-14 h-14 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all group focus:outline-none focus:ring-4 focus:ring-blue-500/30 cursor-pointer"
-        >
-          <Plus className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
-        </button>
-      </div>
-
-      {/* Mobile Bottom Navigation Bar */}
-      <BottomNavBar
-        currentView={currentView}
-        onViewChange={(v) => {
-          setCurrentView(v);
-          if (v === 'on-this-day') {
-            window.history.pushState(null, '', '/on-this-day');
-          } else if (v === 'dashboard') {
-            window.history.pushState(null, '', '/');
-          }
-        }}
-        onOpenNewLog={() => {
-          setEditingLog(null);
-          setIsLogModalOpen(true);
-        }}
-        onOpenSearch={() => setIsSearchOpen(true)}
-      />
 
       <LogModal
         isOpen={isLogModalOpen}
@@ -646,6 +632,7 @@ function AuthenticatedApp() {
         categories={categories}
         onSelectLog={handleSelectSearchResult}
         onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
+        todayDate={selectedDate}
       />
 
       <VercelSchemaModal isOpen={isSchemaModalOpen} onClose={() => setIsSchemaModalOpen(false)} />
@@ -654,7 +641,10 @@ function AuthenticatedApp() {
 
       <NotificationSettingsModal
         isOpen={isNotificationSettingsOpen}
-        onClose={() => setIsNotificationSettingsOpen(false)}
+        onClose={() => {
+          setIsNotificationSettingsOpen(false);
+          checkNotificationsStatus();
+        }}
         authToken={authToken}
       />
 

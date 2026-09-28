@@ -253,7 +253,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
           </div>
 
           {cronStatus.todayMemoriesCount !== undefined && cronStatus.todayMemoriesCount > 0 && (
-            <div className="w-full mt-2 pt-2 border-t border-amber-200/50 flex items-center justify-between text-[11px] text-amber-900 bg-amber-50/90 px-2.5 py-1.5 rounded-xl border border-amber-200/80">
+            <div className="w-full mt-2 pt-2 border-t border-amber-200/50 flex items-center justify-between text-xs text-amber-900 bg-amber-50/90 px-2.5 py-1.5 rounded-xl border border-amber-200/80">
               <span className="flex items-center gap-1.5 font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <span>
@@ -261,8 +261,8 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
                   {cronStatus.onThisDayCategories?.map((c) => c.name).join(', ') || 'On This Day'})
                 </span>
               </span>
-              <span className="font-bold text-amber-700 shrink-0 text-[10px] uppercase tracking-wider bg-amber-100/80 px-1.5 py-0.5 rounded-md">
-                Alert Ready
+              <span className="font-semibold text-amber-800 shrink-0 text-xs bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300">
+                Alert ready
               </span>
             </div>
           )}
@@ -279,14 +279,14 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             onClick={handleSendTestPush}
             disabled={isTesting || !status.isSubscribed}
             title={!status.isSubscribed ? 'Enable notifications first' : 'Broadcast a test notification'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTesting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Send className="w-3.5 h-3.5 text-blue-400" />
             )}
-            <span>Send Test Notification</span>
+            <span>Send test notification</span>
           </button>
 
           {/* Test On This Day Notification Button */}
@@ -296,14 +296,14 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             onClick={handleSendTestOnThisDay}
             disabled={isTestingOnThisDay || !status.isSubscribed}
             title={!status.isSubscribed ? 'Enable notifications first' : "Test 'On This Day' alert for today's historical memories"}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTestingOnThisDay ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <History className="w-3.5 h-3.5 text-amber-200" />
             )}
-            <span>Test "On This Day" Alert</span>
+            <span>Test alert for today</span>
           </button>
 
           {/* Trigger Cron Tick Now */}

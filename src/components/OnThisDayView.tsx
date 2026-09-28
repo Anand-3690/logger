@@ -14,15 +14,12 @@ import {
   X,
   Check,
   History,
-  Bell,
-  Loader2,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
 import { PhotoLightbox } from './PhotoLightbox';
 import { resolvePhotoUrl } from '../utils/photoUtils';
 import { processSyncQueue } from '../syncEngine';
-import { sendTestOnThisDayNotification } from '../utils/pushNotifications';
 import {
   getTodayLocalDate,
   formatLongDate,
@@ -39,8 +36,6 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [targetDate, setTargetDate] = useState<string>(() => getTodayLocalDate());
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
-  const [isAlerting, setIsAlerting] = useState<boolean>(false);
-  const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const todayStr = useMemo(() => getTodayLocalDate(), []);
@@ -131,21 +126,6 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
     }
   };
 
-  const handleSendTestAlert = async () => {
-    try {
-      setIsAlerting(true);
-      setAlertFeedback(null);
-      const res = await sendTestOnThisDayNotification();
-      setAlertFeedback(res.message || 'Notification sent!');
-      setTimeout(() => setAlertFeedback(null), 5000);
-    } catch (err: any) {
-      setAlertFeedback(err.message || 'Failed to dispatch alert.');
-      setTimeout(() => setAlertFeedback(null), 5000);
-    } finally {
-      setIsAlerting(false);
-    }
-  };
-
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       {/* Header Navigation & Title */}
@@ -161,11 +141,11 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-neutral-900 leading-tight">On This Day</h2>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200/80">
+              <span className="text-xs font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
                 Memories
               </span>
             </div>
-            <p className="text-xs text-neutral-500 font-medium">
+            <p className="text-xs text-slate-600 font-medium">
               Historical retrospective across your selected memory categories
             </p>
           </div>
@@ -215,12 +195,12 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
               {formatLongDate(targetDate)}
             </span>
             {isToday && (
-              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <span className="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
                 Today
               </span>
             )}
           </div>
-          <span className="text-[11px] text-neutral-400 font-medium block">
+          <span className="text-xs text-slate-600 font-medium block">
             Tap date to jump to another calendar day
           </span>
 
@@ -325,33 +305,10 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1 flex-wrap gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Memories Found ({historicalLogs.length})
+            <span className="text-xs font-semibold text-slate-700">
+              {historicalLogs.length === 1 ? '1 memory found' : `${historicalLogs.length} memories found`}
             </span>
-            {isToday && (
-              <button
-                id="btn-on-this-day-test-alert"
-                onClick={handleSendTestAlert}
-                disabled={isAlerting}
-                title="Send test notification for today's memories"
-                className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200/80 transition-colors shadow-2xs"
-              >
-                {isAlerting ? (
-                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
-                ) : (
-                  <Bell className="w-3 h-3 text-purple-600" />
-                )}
-                <span>{isAlerting ? 'Dispatching...' : 'Test Alert for Today'}</span>
-              </button>
-            )}
           </div>
-
-          {alertFeedback && (
-            <div className="p-3 bg-purple-50 border border-purple-200 text-purple-800 text-xs rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
-              <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>{alertFeedback}</span>
-            </div>
-          )}
 
           {historicalLogs.map((log) => {
             const year = log.log_date.split('-')[0];
@@ -383,12 +340,12 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
                     </span>
 
                     {/* Anniversary Delta Badge */}
-                    <span className="text-[11px] font-bold text-neutral-600 bg-white/70 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/80 shadow-xs">
+                    <span className="text-xs font-semibold text-slate-700 bg-white/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-slate-200/80 shadow-xs">
                       {yearsAgo === 1 ? '1 year ago' : `${yearsAgo} years ago`}
                     </span>
 
                     {/* Date String */}
-                    <span className="text-xs text-neutral-400 font-medium">
+                    <span className="text-xs text-slate-600 font-medium">
                       {log.log_date}
                     </span>
                   </div>
@@ -427,7 +384,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
                   <h3 className="text-base font-bold text-neutral-900 leading-tight">
                     On This Day Categories
                   </h3>
-                  <p className="text-xs text-neutral-500 font-medium">
+                  <p className="text-xs text-slate-600 font-medium">
                     Only checked categories will appear in memories & alerts
                   </p>
                 </div>
@@ -467,7 +424,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
                         <div className="text-xs sm:text-sm font-bold text-neutral-900">
                           {cat.name}
                         </div>
-                        <div className="text-[11px] text-neutral-400">
+                        <div className="text-xs text-slate-600">
                           {isSelected ? 'Included in On This Day' : 'Excluded from On This Day'}
                         </div>
                       </div>

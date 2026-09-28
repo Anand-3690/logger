@@ -408,8 +408,8 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
 
               {/* Today marker indicator */}
               {item.isToday && !item.isSelected && (
-                <span className="absolute -top-1 px-1 py-0.2 bg-neutral-900 text-[7px] sm:text-[8px] font-bold text-white rounded-full">
-                  TODAY
+                <span className="absolute -top-2 px-1.5 py-0.2 bg-neutral-900 text-xs font-semibold text-white rounded-full shadow-2xs">
+                  Today
                 </span>
               )}
             </button>

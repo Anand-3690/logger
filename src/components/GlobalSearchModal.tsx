@@ -13,7 +13,7 @@ import {
   CornerDownLeft,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
-import { formatMediumDate } from '../utils/dateUtils';
+import { formatMediumDate, getTodayLocalDate } from '../utils/dateUtils';
 import { resolvePhotoUrl } from '../utils/photoUtils';
 
 interface GlobalSearchModalProps {
@@ -23,6 +23,7 @@ interface GlobalSearchModalProps {
   categories: Category[];
   onSelectLog: (log: DailyLog) => void;
   onViewPhoto?: (url: string, title?: string) => void;
+  todayDate?: string;
 }
 
 /**
@@ -94,9 +95,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   categories,
   onSelectLog,
   onViewPhoto,
+  todayDate,
 }) => {
   const [query, setQuery] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [scope, setScope] = useState<'all' | 'today'>('all');
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +110,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     if (isOpen) {
       setQuery('');
       setSelectedCategoryId('all');
+      setScope('all');
       setSelectedIndex(0);
       setTimeout(() => {
         inputRef.current?.focus();
@@ -119,14 +123,20 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     return new Map(categories.map((c) => [c.id, c]));
   }, [categories]);
 
-  // Filter logs according to query and selected category
+  // Filter logs according to query, scope (Today / All), and selected category
   const searchResults = useMemo(() => {
     if (!logs || logs.length === 0) return [];
 
     const cleanQuery = query.trim().normalize('NFC').toLowerCase();
+    const effectiveToday = todayDate || getTodayLocalDate();
 
     return logs
       .filter((log) => {
+        // Today vs All scope filter
+        if (scope === 'today' && log.log_date !== effectiveToday) {
+          return false;
+        }
+
         // Category scope filter
         if (selectedCategoryId !== 'all' && log.category_id !== selectedCategoryId) {
           return false;
@@ -146,12 +156,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         );
       })
       .sort((a, b) => new Date(b.log_date).getTime() - new Date(a.log_date).getTime());
-  }, [logs, query, selectedCategoryId, categoryMap]);
+  }, [logs, query, scope, todayDate, selectedCategoryId, categoryMap]);
 
   // Keep selected index within valid bounds
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query, selectedCategoryId]);
+  }, [query, scope, selectedCategoryId]);
 
   // Scroll active item into view
   useEffect(() => {
@@ -242,18 +252,50 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           </button>
         </div>
 
-        {/* Category Filter Pills */}
-        <div className="px-3.5 sm:px-4 py-2.5 bg-neutral-50/70 border-b border-neutral-200/60 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        {/* Scope (Today / All) & Category Filter Pills */}
+        <div className="px-3.5 sm:px-4 py-2.5 bg-neutral-50/80 border-b border-neutral-200/80 flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {/* Today / All Scope Toggle */}
+          <div className="flex items-center rounded-xl bg-slate-200/80 p-0.5 text-xs font-semibold shrink-0">
+            <button
+              type="button"
+              id="btn-search-scope-today"
+              onClick={() => setScope('today')}
+              aria-pressed={scope === 'today'}
+              className={`rounded-lg px-2.5 py-1 transition-colors cursor-pointer ${
+                scope === 'today'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              id="btn-search-scope-all"
+              onClick={() => setScope('all')}
+              aria-pressed={scope === 'all'}
+              className={`rounded-lg px-2.5 py-1 transition-colors cursor-pointer ${
+                scope === 'all'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              All
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-slate-300 shrink-0" />
+
           <button
             type="button"
             onClick={() => setSelectedCategoryId('all')}
-            className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedCategoryId === 'all'
                 ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-white hover:bg-neutral-100 text-neutral-600 border border-neutral-200/70'
+                : 'bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200/80'
             }`}
           >
-            <span>All Categories</span>
+            <span>All categories</span>
           </button>
 
           {categories.map((cat) => {
@@ -263,10 +305,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategoryId(cat.id)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
                     ? 'text-white shadow-xs'
-                    : 'bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200/70'
+                    : 'bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200/80'
                 }`}
                 style={{
                   backgroundColor: isSelected ? cat.color_code || '#3b82f6' : undefined,
@@ -280,22 +322,27 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         </div>
 
         {/* Results Count & Shortcut Hints */}
-        <div className="px-4 py-2 text-[11px] font-semibold text-neutral-500 flex items-center justify-between border-b border-neutral-100 bg-neutral-50/40">
+        <div className="px-4 py-2 text-xs font-medium text-slate-700 flex items-center justify-between border-b border-neutral-100 bg-neutral-50/50">
           <div className="flex items-center gap-2">
             <span>
               {searchResults.length === 1
-                ? '1 entry found'
-                : `${searchResults.length} entries found`}
+                ? '1 log found'
+                : `${searchResults.length} logs found`}
             </span>
+            {scope === 'today' && (
+              <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-800">
+                Today only
+              </span>
+            )}
             {query.trim() && (
-              <span className="text-neutral-400">
+              <span className="text-slate-500">
                 matching &quot;{query}&quot;
               </span>
             )}
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-neutral-400 text-[10px]">
+          <div className="hidden sm:flex items-center gap-2 text-slate-600 text-xs font-medium">
             <span>↑↓ Navigate</span>
-            <span>↵ Select Date</span>
+            <span>↵ Select date</span>
           </div>
         </div>
 
@@ -351,13 +398,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                           {cat?.name || 'Uncategorized'}
                         </span>
 
-                        <span className="text-[11px] text-neutral-500 font-medium flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-neutral-400" />
+                        <span className="text-xs text-slate-600 font-medium flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
                           {formatMediumDate(log.log_date)}
                         </span>
 
                         {relativeBadge && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-purple-100/80 text-purple-700 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 text-xs font-semibold">
                             {relativeBadge}
                           </span>
                         )}
@@ -412,7 +459,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           <div className="flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-blue-600" />
             <span className="font-semibold text-neutral-700">Instant Offline Search</span>
-            <span className="hidden sm:inline text-neutral-400">
+            <span className="hidden sm:inline text-slate-600 font-medium">
               • Sub-millisecond Dexie query with Gujarati Unicode support
             </span>
           </div>
