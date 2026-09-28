@@ -20,11 +20,22 @@ import {
   addMonthsToDate,
   addYearsToDate,
 } from '../utils/dateUtils';
+import { getTodayLogicalDate } from '../utils/dayBoundary';
+import { DayCutoffSetting } from './DayCutoffSetting';
+
+export interface DayCategoryDot {
+  id: string;
+  name: string;
+  color_code: string;
+}
 
 interface DaySelectorProps {
   selectedDate: string; // YYYY-MM-DD
   onSelectDate: (date: string) => void;
   logCountsByDate?: Record<string, number>;
+  dayCategoriesByDate?: Record<string, DayCategoryDot[]>;
+  todayDate?: string;
+  dayCutoffHour?: number;
 }
 
 const MONTH_NAMES = [
@@ -46,6 +57,9 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
   selectedDate,
   onSelectDate,
   logCountsByDate = {},
+  dayCategoriesByDate = {},
+  todayDate,
+  dayCutoffHour,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const calendarModalRef = useRef<HTMLDivElement>(null);
@@ -70,7 +84,7 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
     setViewMonth(d.getMonth());
   }, [selectedDate]);
 
-  const todayStr = useMemo(() => getTodayLocalDate(), []);
+  const todayStr = useMemo(() => todayDate || getTodayLogicalDate(dayCutoffHour), [todayDate, dayCutoffHour]);
   const isSelectedToday = selectedDate === todayStr;
 
   // Generate a window of 15 days around the selected date (7 days before, 7 days after)
@@ -366,49 +380,96 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
       >
         {days.map((item) => {
           const logCount = logCountsByDate[item.dateStr] || 0;
+          const categoriesForDay = dayCategoriesByDate[item.dateStr] || [];
+
           return (
             <button
               key={item.dateStr}
               id={`day-card-${item.dateStr}`}
               data-selected={item.isSelected}
+              data-today={item.isToday}
               onClick={() => onSelectDate(item.dateStr)}
-              className={`flex flex-col items-center justify-center min-w-[54px] sm:min-w-[62px] h-[68px] sm:h-[72px] rounded-xl px-1.5 py-1 transition-all relative shrink-0 active:scale-95 ${
+              className={`flex flex-col items-center justify-between min-w-[56px] sm:min-w-[64px] h-[72px] sm:h-[76px] rounded-2xl px-1.5 py-1.5 transition-all relative shrink-0 active:scale-95 cursor-pointer ${
                 item.isSelected
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-500/50 ring-offset-2 ring-offset-white border border-blue-400/40'
-                  : 'bg-white/60 text-neutral-700 hover:bg-white/90 border border-neutral-200/60 hover:shadow-xs'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-500/60 ring-offset-2 ring-offset-white border border-blue-400/50 z-10'
+                  : item.isToday
+                  ? 'bg-white/95 text-slate-900 border-2 border-emerald-500/80 shadow-xs hover:bg-emerald-50/20'
+                  : 'bg-white/60 text-slate-700 hover:bg-white/90 border border-slate-200/70 hover:shadow-xs'
               }`}
             >
+              {/* Day of Week */}
               <span
-                className={`text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider ${
-                  item.isSelected ? 'text-blue-100' : 'text-neutral-500'
+                className={`text-[10px] sm:text-xs font-semibold uppercase tracking-wider ${
+                  item.isSelected
+                    ? 'text-blue-100'
+                    : item.isToday
+                    ? 'text-emerald-700 font-bold'
+                    : 'text-slate-500'
                 }`}
               >
                 {item.dayOfWeek}
               </span>
+
+              {/* Day Number */}
               <span
-                className={`text-base sm:text-lg font-bold my-0.5 leading-none ${
-                  item.isSelected ? 'text-white' : 'text-neutral-900'
+                className={`text-base sm:text-lg font-bold leading-none ${
+                  item.isSelected
+                    ? 'text-white font-extrabold'
+                    : item.isToday
+                    ? 'text-slate-950 font-extrabold'
+                    : 'text-slate-900'
                 }`}
               >
                 {item.dayNum}
               </span>
 
-              {/* Activity indicator dot */}
-              <div className="h-1.5 flex items-center justify-center">
-                {logCount > 0 ? (
+              {/* Category activity dots (up to 3, then a "+") */}
+              <div className="h-2 flex items-center justify-center gap-1">
+                {categoriesForDay.length > 0 ? (
+                  <>
+                    {categoriesForDay.slice(0, 3).map((cat, idx) => (
+                      <span
+                        key={idx}
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 shadow-2xs ${
+                          item.isSelected ? 'ring-1 ring-white/50' : ''
+                        }`}
+                        style={{
+                          backgroundColor: item.isSelected ? '#ffffff' : cat.color_code || '#3b82f6',
+                        }}
+                        title={cat.name}
+                      />
+                    ))}
+                    {categoriesForDay.length > 3 && (
+                      <span
+                        className={`text-[10px] font-black leading-none ${
+                          item.isSelected ? 'text-white' : 'text-slate-600'
+                        }`}
+                        title={`+${categoriesForDay.length - 3} more`}
+                      >
+                        +
+                      </span>
+                    )}
+                  </>
+                ) : logCount > 0 ? (
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       item.isSelected ? 'bg-white' : 'bg-blue-600'
                     }`}
                   />
                 ) : (
-                  <span className="w-1.5 h-1.5" />
+                  <span className="w-1.5 h-1.5 opacity-0" />
                 )}
               </div>
 
-              {/* Today marker indicator */}
-              {item.isToday && !item.isSelected && (
-                <span className="absolute -top-2 px-1.5 py-0.2 bg-neutral-900 text-xs font-semibold text-white rounded-full shadow-2xs">
+              {/* Today marker indicator: visible "Today" label */}
+              {item.isToday && (
+                <span
+                  className={`absolute -top-2 px-1.5 py-0.2 rounded-full text-[10px] font-bold tracking-tight shadow-2xs ${
+                    item.isSelected
+                      ? 'bg-neutral-900 text-white border border-neutral-700'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
                   Today
                 </span>
               )}
@@ -578,12 +639,17 @@ export const DaySelector: React.FC<DaySelectorProps> = ({
                     }
                     setIsCalendarOpen(false);
                   }}
-                  className="px-2 py-1 bg-neutral-100 hover:bg-blue-50 hover:text-blue-700 text-neutral-600 text-[10px] sm:text-[11px] font-medium rounded-lg transition-colors"
+                  className="px-2 py-1 bg-neutral-100 hover:bg-blue-50 hover:text-blue-700 text-neutral-600 text-[10px] sm:text-[11px] font-medium rounded-lg transition-colors cursor-pointer"
                 >
                   {preset.label}
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Day Boundary Cutoff Setting */}
+          <div className="border-t border-neutral-100 pt-2.5 mt-2.5">
+            <DayCutoffSetting compact />
           </div>
         </div>
       )}

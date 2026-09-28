@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { Category, DailyLog } from './types';
 import { AppNav } from './components/AppNav';
-import { DaySelector } from './components/DaySelector';
+import { DaySelector, DayCategoryDot } from './components/DaySelector';
 import { ActivityFeed } from './components/ActivityFeed';
 import { LogModal } from './components/LogModal';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
@@ -19,7 +19,15 @@ import {
   subscribeToWebPush,
   unsubscribeFromWebPush,
 } from './utils/pushNotifications';
-import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
+import { getTodayLocalDate, getCurrentLocalMonth, parseLocalDate, formatLocalDate } from './utils/dateUtils';
+import {
+  getTodayLogicalDate,
+  getDayCutoffHour,
+  getUserTimezone,
+  computeLogicalDate,
+  getEffectiveLogDate,
+  backfillExistingLogs,
+} from './utils/dayBoundary';
 import { Check, AlertCircle, Loader2 } from 'lucide-react';
 import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine';
 import { resolvePhotoUrl } from './utils/photoUtils';
@@ -47,9 +55,25 @@ function AuthenticatedApp() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(false);
 
-  // Date States
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDate());
+  // Day Cutoff & Date States
+  const [dayCutoffHour, setDayCutoffHour] = useState<number>(() => getDayCutoffHour());
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayLogicalDate());
   const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentLocalMonth());
+  const [preselectedCategoryId, setPreselectedCategoryId] = useState<string | null>(null);
+
+  // Sync day cutoff from settings events
+  useEffect(() => {
+    const handleSettingsChanged = () => {
+      setDayCutoffHour(getDayCutoffHour());
+    };
+    window.addEventListener('activity_settings_changed', handleSettingsChanged);
+    return () => window.removeEventListener('activity_settings_changed', handleSettingsChanged);
+  }, []);
+
+  // Backfill existing logs once to safely populate logical_date
+  useEffect(() => {
+    backfillExistingLogs(db).catch((e) => console.warn('Backfill note:', e));
+  }, []);
 
   // ==========================================
   // LOCAL-FIRST DATA LAYER (DEXIE)
@@ -57,7 +81,18 @@ function AuthenticatedApp() {
   const categories = useLiveQuery(() => db.categories.toArray()) || [];
   
   const rawCurrentDateLogs = useLiveQuery(
-    () => db.dailyLogs.where('log_date').equals(selectedDate).toArray(),
+    async () => {
+      const withLogical = await db.dailyLogs.where('logical_date').equals(selectedDate).toArray();
+      const fallback = await db.dailyLogs.where('log_date').equals(selectedDate).toArray();
+      const map = new Map<string, DailyLog>();
+      for (const log of withLogical) map.set(log.id, log);
+      for (const log of fallback) {
+        if ((log.logical_date || log.log_date) === selectedDate && !map.has(log.id)) {
+          map.set(log.id, log);
+        }
+      }
+      return Array.from(map.values());
+    },
     [selectedDate]
   ) || [];
   
@@ -333,6 +368,24 @@ function AuthenticatedApp() {
       const logId = existingId || crypto.randomUUID();
       const existing = existingId ? await db.dailyLogs.get(existingId) : null;
       const now = new Date().toISOString();
+      const cutoff = getDayCutoffHour();
+      const tz = getUserTimezone();
+      const todayLogical = getTodayLogicalDate(cutoff, tz);
+
+      let computedLogicalDate: string;
+      if (existing) {
+        if (log_date === existing.log_date && existing.logical_date) {
+          computedLogicalDate = existing.logical_date;
+        } else {
+          computedLogicalDate = log_date;
+        }
+      } else {
+        if (log_date === todayLogical) {
+          computedLogicalDate = computeLogicalDate(now, cutoff, tz, log_date);
+        } else {
+          computedLogicalDate = log_date;
+        }
+      }
 
       let resolvedPhotoUrl = photoData || null;
       let resolvedPhotoData = photoData || null;
@@ -352,6 +405,7 @@ function AuthenticatedApp() {
         await db.dailyLogs.put({
           id: logId,
           log_date,
+          logical_date: computedLogicalDate,
           category_id,
           notes,
           status: existing?.status || 'present',
@@ -487,10 +541,50 @@ function AuthenticatedApp() {
   const logCountsByDate = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const log of allLogs) {
-      counts[log.log_date] = (counts[log.log_date] || 0) + 1;
+      const eff = getEffectiveLogDate(log);
+      if (eff) {
+        counts[eff] = (counts[eff] || 0) + 1;
+      }
     }
     return counts;
   }, [allLogs]);
+
+  const dayCategoriesByDate = useMemo(() => {
+    const map: Record<string, DayCategoryDot[]> = {};
+    for (const log of allLogs) {
+      const effDate = getEffectiveLogDate(log);
+      if (!effDate) continue;
+      if (!map[effDate]) map[effDate] = [];
+      if (log.category && !map[effDate].some((c) => c.id === log.category!.id)) {
+        map[effDate].push({
+          id: log.category.id,
+          name: log.category.name,
+          color_code: log.category.color_code || '#3b82f6',
+        });
+      }
+    }
+    return map;
+  }, [allLogs]);
+
+  const topCategoriesLast60Days = useMemo(() => {
+    const today = getTodayLogicalDate(dayCutoffHour);
+    const d = parseLocalDate(today);
+    d.setDate(d.getDate() - 60);
+    const sixtyDaysAgo = formatLocalDate(d);
+
+    const catCounts: Record<string, number> = {};
+    for (const log of allLogs) {
+      const effDate = getEffectiveLogDate(log);
+      if (effDate >= sixtyDaysAgo && effDate <= today && log.category_id) {
+        catCounts[log.category_id] = (catCounts[log.category_id] || 0) + 1;
+      }
+    }
+
+    const activeCategories = categories.filter((c) => c.is_active !== false);
+    return activeCategories
+      .sort((a, b) => (catCounts[b.id] || 0) - (catCounts[a.id] || 0))
+      .slice(0, 4);
+  }, [allLogs, categories, dayCutoffHour]);
 
   if (isCheckingAuth) {
     return (
@@ -540,6 +634,7 @@ function AuthenticatedApp() {
         }}
         onNewLog={() => {
           setEditingLog(null);
+          setPreselectedCategoryId(null);
           setIsLogModalOpen(true);
         }}
         onSearch={() => setIsSearchOpen(true)}
@@ -564,17 +659,24 @@ function AuthenticatedApp() {
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               logCountsByDate={logCountsByDate}
+              dayCategoriesByDate={dayCategoriesByDate}
+              todayDate={getTodayLogicalDate(dayCutoffHour)}
+              dayCutoffHour={dayCutoffHour}
             />
             <ActivityFeed
               logs={currentDateLogs}
               isLoading={false}
               selectedDate={selectedDate}
-              onOpenNewLog={() => {
+              topCategories={topCategoriesLast60Days}
+              dayCutoffHour={dayCutoffHour}
+              onOpenNewLog={(catId) => {
                 setEditingLog(null);
+                setPreselectedCategoryId(catId || null);
                 setIsLogModalOpen(true);
               }}
               onEditLog={(log) => {
                 setEditingLog(log);
+                setPreselectedCategoryId(log.category_id);
                 setIsLogModalOpen(true);
               }}
               onDeleteLog={handleDeleteLog}
@@ -597,10 +699,12 @@ function AuthenticatedApp() {
         onClose={() => {
           setIsLogModalOpen(false);
           setEditingLog(null);
+          setPreselectedCategoryId(null);
         }}
         categories={categories}
         selectedDate={selectedDate}
         editingLog={editingLog}
+        defaultCategoryId={preselectedCategoryId}
         onSaveLog={handleSaveLog}
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
@@ -632,7 +736,7 @@ function AuthenticatedApp() {
         categories={categories}
         onSelectLog={handleSelectSearchResult}
         onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
-        todayDate={selectedDate}
+        todayDate={getTodayLogicalDate(dayCutoffHour)}
       />
 
       <VercelSchemaModal isOpen={isSchemaModalOpen} onClose={() => setIsSchemaModalOpen(false)} />

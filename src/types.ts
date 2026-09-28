@@ -24,6 +24,7 @@ export interface PushSubscriptionRecord {
 export interface DailyLog {
   id: string;
   log_date: string; // YYYY-MM-DD
+  logical_date?: string; // YYYY-MM-DD (accounting for cutoff hour)
   category_id: string;
   notes?: string | null;
   photo_url?: string | null;

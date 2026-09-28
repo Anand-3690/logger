@@ -26,6 +26,7 @@ interface LogModalProps {
   categories: Category[];
   selectedDate: string;
   editingLog?: DailyLog | null;
+  defaultCategoryId?: string | null;
   onSaveLog: (formData: FormData) => Promise<void>;
   onAddCategory: (category: {
     name: string;
@@ -55,6 +56,7 @@ export const LogModal: React.FC<LogModalProps> = ({
   categories,
   selectedDate,
   editingLog,
+  defaultCategoryId,
   onSaveLog,
   onAddCategory,
   onDeleteCategory,
@@ -123,7 +125,9 @@ export const LogModal: React.FC<LogModalProps> = ({
         setErrorMsg(null);
         setIsCreatingCategory(false);
 
-        if (categories.length > 0) {
+        if (defaultCategoryId && categories.some((c) => c.id === defaultCategoryId)) {
+          setSelectedCategoryId(defaultCategoryId);
+        } else if (categories.length > 0) {
           const exists = categories.some((c) => c.id === selectedCategoryId);
           if (!exists) {
             setSelectedCategoryId(categories[0].id);
@@ -140,7 +144,7 @@ export const LogModal: React.FC<LogModalProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, selectedDate, categories, selectedCategoryId, editingLog]);
+  }, [isOpen, selectedDate, categories, selectedCategoryId, editingLog, defaultCategoryId]);
 
   if (!isOpen) return null;
 

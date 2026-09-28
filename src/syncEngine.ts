@@ -1,5 +1,6 @@
 import { db } from './db';
 import { supabase } from './supabaseClient';
+import { computeLogicalDate, getDayCutoffHour, getUserTimezone } from './utils/dayBoundary';
 
 let isSyncing = false;
 let isPulling = false;
@@ -177,6 +178,14 @@ export const processSyncQueue = async () => {
               const payload: Record<string, any> = {
                 id: record.id,
                 log_date: record.log_date,
+                logical_date:
+                  record.logical_date ||
+                  computeLogicalDate(
+                    record.created_at || record.log_date,
+                    getDayCutoffHour(),
+                    getUserTimezone(),
+                    record.log_date
+                  ),
                 category_id: record.category_id,
                 notes: record.notes || '',
                 status: record.status || 'present',
@@ -337,8 +346,21 @@ export const pullFromCloud = async (force: boolean = false) => {
       const localPhoto = (local as any)?.local_photo;
       const finalPhotoUrl = resolvedUrl || (local as any)?.photo_url || photoData || null;
 
+      const cutoffHour = getDayCutoffHour();
+      const timeZone = getUserTimezone();
+      const logicalDate =
+        remoteLog.logical_date ||
+        local?.logical_date ||
+        computeLogicalDate(
+          remoteLog.created_at || remoteLog.log_date,
+          cutoffHour,
+          timeZone,
+          remoteLog.log_date
+        );
+
       return {
         ...remoteLog,
+        logical_date: logicalDate,
         photo_url: finalPhotoUrl,
         photo_storage_path: remoteLog.photo_storage_path || local?.photo_storage_path || null,
         photo_data: photoData,

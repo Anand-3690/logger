@@ -26,6 +26,7 @@ import {
   formatShortDate,
   addDaysToDate,
 } from '../utils/dateUtils';
+import { getTodayLogicalDate, getEffectiveLogDate } from '../utils/dayBoundary';
 
 interface OnThisDayViewProps {
   onBack: () => void;
@@ -34,11 +35,11 @@ interface OnThisDayViewProps {
 export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
-  const [targetDate, setTargetDate] = useState<string>(() => getTodayLocalDate());
+  const [targetDate, setTargetDate] = useState<string>(() => getTodayLogicalDate());
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
-  const todayStr = useMemo(() => getTodayLocalDate(), []);
+  const todayStr = useMemo(() => getTodayLogicalDate(), []);
   const isToday = targetDate === todayStr;
 
   const [targetYear, targetMonth, targetDay] = useMemo(() => {
@@ -81,8 +82,9 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
     // Filter for matching Month & Day, excluding current year
     return logs
       .filter((log) => {
-        if (!log.log_date) return false;
-        const [logY, logM, logD] = log.log_date.split('-').map(Number);
+        const effDate = getEffectiveLogDate(log);
+        if (!effDate) return false;
+        const [logY, logM, logD] = effDate.split('-').map(Number);
         return logM === targetMonth && logD === targetDay && logY !== targetYear;
       })
       .map((log) => {
@@ -93,7 +95,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
           category: categories.find((c) => c.id === log.category_id),
         };
       })
-      .sort((a, b) => new Date(b.log_date).getTime() - new Date(a.log_date).getTime());
+      .sort((a, b) => new Date(getEffectiveLogDate(b)).getTime() - new Date(getEffectiveLogDate(a)).getTime());
   }, [targetMonth, targetDay, targetYear, selectedCategoryId, eligibleCategories, eligibleCategoryIds, categories]);
 
   const handlePrevDay = () => {
@@ -105,7 +107,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
   };
 
   const handleResetToday = () => {
-    setTargetDate(getTodayLocalDate());
+    setTargetDate(getTodayLogicalDate());
   };
 
   const handleToggleCategory = async (cat: Category) => {
@@ -311,7 +313,8 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
           </div>
 
           {historicalLogs.map((log) => {
-            const year = log.log_date.split('-')[0];
+            const effDate = getEffectiveLogDate(log);
+            const year = effDate.split('-')[0];
             const yearsAgo = targetYear - parseInt(year, 10);
             const categoryName = log.category?.name || 'Activity';
             const categoryColor = log.category?.color_code || '#8b5cf6';
@@ -346,7 +349,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
 
                     {/* Date String */}
                     <span className="text-xs text-slate-600 font-medium">
-                      {log.log_date}
+                      {effDate}
                     </span>
                   </div>
 
@@ -361,7 +364,7 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
                   <ActivityPhoto
                     log={log as any}
                     categoryName={categoryName}
-                    selectedDate={log.log_date}
+                    selectedDate={effDate}
                     onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
                   />
                 </div>

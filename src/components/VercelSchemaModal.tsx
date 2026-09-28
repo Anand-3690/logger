@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Database, Layers, CloudUpload, Bell, Terminal, RefreshCw, CheckCircle2, AlertCircle, FileText, Download } from 'lucide-react';
+import { DayCutoffSetting } from './DayCutoffSetting';
 
 interface VercelSchemaModalProps {
   isOpen: boolean;
@@ -357,6 +358,11 @@ self.addEventListener('notificationclick', (event) => {
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Day Boundary & Settings */}
+        <div className="px-5 py-3.5 border-b border-neutral-800 bg-neutral-900/60">
+          <DayCutoffSetting dark />
         </div>
 
         {/* Sync Controls Banner */}

@@ -15,6 +15,7 @@ import {
 import { CategoryIcon } from './CategoryIcon';
 import { formatMediumDate, getTodayLocalDate } from '../utils/dateUtils';
 import { resolvePhotoUrl } from '../utils/photoUtils';
+import { getEffectiveLogDate, getTodayLogicalDate } from '../utils/dayBoundary';
 
 interface GlobalSearchModalProps {
   isOpen: boolean;
@@ -128,12 +129,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     if (!logs || logs.length === 0) return [];
 
     const cleanQuery = query.trim().normalize('NFC').toLowerCase();
-    const effectiveToday = todayDate || getTodayLocalDate();
+    const effectiveToday = todayDate || getTodayLogicalDate();
 
     return logs
       .filter((log) => {
+        const effDate = getEffectiveLogDate(log);
+
         // Today vs All scope filter
-        if (scope === 'today' && log.log_date !== effectiveToday) {
+        if (scope === 'today' && effDate !== effectiveToday) {
           return false;
         }
 
@@ -147,15 +150,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         const cat = categoryMap.get(log.category_id);
         const catName = cat?.name?.normalize('NFC').toLowerCase() || '';
         const notes = log.notes?.normalize('NFC').toLowerCase() || '';
-        const dateStr = log.log_date || '';
 
         return (
           notes.includes(cleanQuery) ||
           catName.includes(cleanQuery) ||
-          dateStr.includes(cleanQuery)
+          effDate.includes(cleanQuery)
         );
       })
-      .sort((a, b) => new Date(b.log_date).getTime() - new Date(a.log_date).getTime());
+      .sort((a, b) => new Date(getEffectiveLogDate(b)).getTime() - new Date(getEffectiveLogDate(a)).getTime());
   }, [logs, query, scope, todayDate, selectedCategoryId, categoryMap]);
 
   // Keep selected index within valid bounds
@@ -367,7 +369,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
             searchResults.map((log, index) => {
               const cat = categoryMap.get(log.category_id);
               const isItemActive = index === selectedIndex;
-              const relativeBadge = getRelativeTimeBadge(log.log_date);
+              const effDate = getEffectiveLogDate(log);
+              const relativeBadge = getRelativeTimeBadge(effDate);
               const resolvedPhoto = resolvePhotoUrl(log);
 
               return (
@@ -400,7 +403,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
                         <span className="text-xs text-slate-600 font-medium flex items-center gap-1">
                           <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                          {formatMediumDate(log.log_date)}
+                          {formatMediumDate(effDate)}
                         </span>
 
                         {relativeBadge && (
@@ -424,7 +427,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                         onClick={(e) => {
                           if (onViewPhoto) {
                             e.stopPropagation();
-                            onViewPhoto(resolvedPhoto, `${cat?.name} - ${log.log_date}`);
+                            onViewPhoto(resolvedPhoto, `${cat?.name} - ${effDate}`);
                           }
                         }}
                         className="w-10 h-10 rounded-lg overflow-hidden border border-neutral-200 hover:ring-2 hover:ring-blue-500 transition-all cursor-zoom-in shrink-0 bg-neutral-100"

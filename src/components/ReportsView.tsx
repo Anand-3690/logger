@@ -4,6 +4,7 @@ import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
 import { PhotoLightbox } from './PhotoLightbox';
 import { resolvePhotoUrl } from '../utils/photoUtils';
+import { getEffectiveLogDate } from '../utils/dayBoundary';
 import {
   Download,
   Calendar,
@@ -77,12 +78,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const stats = useMemo(() => {
     // Only count "present" logs (or undefined/legacy logs) for positive stats
     const filteredLogs = logs.filter(
-      (log) => log.log_date.startsWith(selectedMonth) && log.status !== 'absent'
+      (log) => getEffectiveLogDate(log).startsWith(selectedMonth) && log.status !== 'absent'
     );
     const totalLogs = filteredLogs.length;
 
     // Unique active days
-    const activeDaysSet = new Set(filteredLogs.map((l) => l.log_date));
+    const activeDaysSet = new Set(filteredLogs.map((l) => getEffectiveLogDate(l)));
     const activeDaysCount = activeDaysSet.size;
 
     // Photos count
@@ -100,15 +101,16 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     });
 
     filteredLogs.forEach((log) => {
+      const effDate = getEffectiveLogDate(log);
       const catId = log.category_id;
       if (categoryCountMap[catId]) {
         categoryCountMap[catId].count += 1;
-        categoryCountMap[catId].dates.push(log.log_date);
+        categoryCountMap[catId].dates.push(effDate);
       } else if (log.category) {
         categoryCountMap[catId] = {
           category: log.category,
           count: 1,
-          dates: [log.log_date],
+          dates: [effDate],
         };
       }
     });
@@ -130,7 +132,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       dailyCounts[day] = 0;
     }
     filteredLogs.forEach((log) => {
-      const dayNum = parseInt(log.log_date.split('-')[2], 10);
+      const effDate = getEffectiveLogDate(log);
+      const dayNum = parseInt(effDate.split('-')[2], 10);
       if (dailyCounts[dayNum] !== undefined) {
         dailyCounts[dayNum] += 1;
       }
@@ -171,7 +174,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           percentage: item.percentage,
         })),
         logs: stats.filteredLogs.map((log) => ({
-          date: log.log_date,
+          date: getEffectiveLogDate(log),
           categoryName: log.category?.name || 'Activity',
           notes: log.notes,
         })),
@@ -511,7 +514,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-neutral-900">{log.category?.name}</span>
-                        <span className="text-neutral-400 text-xs font-mono">{log.log_date}</span>
+                        <span className="text-neutral-400 text-xs font-mono">{getEffectiveLogDate(log)}</span>
                       </div>
                       {log.notes && (
                         <p className="text-neutral-600 text-xs mt-1 whitespace-pre-line break-words leading-relaxed">
@@ -524,7 +527,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   <ActivityPhoto
                     log={log}
                     categoryName={log.category?.name || 'Activity'}
-                    selectedDate={log.log_date}
+                    selectedDate={getEffectiveLogDate(log)}
                     aspectRatio="square"
                     onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
                     className="shrink-0"
