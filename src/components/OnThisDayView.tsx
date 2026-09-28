@@ -14,12 +14,15 @@ import {
   X,
   Check,
   History,
+  Bell,
+  Loader2,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
 import { PhotoLightbox } from './PhotoLightbox';
 import { resolvePhotoUrl } from '../utils/photoUtils';
 import { processSyncQueue } from '../syncEngine';
+import { sendTestOnThisDayNotification } from '../utils/pushNotifications';
 import {
   getTodayLocalDate,
   formatLongDate,
@@ -36,6 +39,8 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [targetDate, setTargetDate] = useState<string>(() => getTodayLocalDate());
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
+  const [isAlerting, setIsAlerting] = useState<boolean>(false);
+  const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const todayStr = useMemo(() => getTodayLocalDate(), []);
@@ -123,6 +128,21 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
       processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
     } catch (err) {
       console.error('Failed to toggle category on-this-day status:', err);
+    }
+  };
+
+  const handleSendTestAlert = async () => {
+    try {
+      setIsAlerting(true);
+      setAlertFeedback(null);
+      const res = await sendTestOnThisDayNotification();
+      setAlertFeedback(res.message || 'Notification sent!');
+      setTimeout(() => setAlertFeedback(null), 5000);
+    } catch (err: any) {
+      setAlertFeedback(err.message || 'Failed to dispatch alert.');
+      setTimeout(() => setAlertFeedback(null), 5000);
+    } finally {
+      setIsAlerting(false);
     }
   };
 
@@ -304,11 +324,34 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex items-center justify-between px-1 flex-wrap gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
               Memories Found ({historicalLogs.length})
             </span>
+            {isToday && (
+              <button
+                id="btn-on-this-day-test-alert"
+                onClick={handleSendTestAlert}
+                disabled={isAlerting}
+                title="Send test notification for today's memories"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200/80 transition-colors shadow-2xs"
+              >
+                {isAlerting ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                ) : (
+                  <Bell className="w-3 h-3 text-purple-600" />
+                )}
+                <span>{isAlerting ? 'Dispatching...' : 'Test Alert for Today'}</span>
+              </button>
+            )}
           </div>
+
+          {alertFeedback && (
+            <div className="p-3 bg-purple-50 border border-purple-200 text-purple-800 text-xs rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
+              <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>{alertFeedback}</span>
+            </div>
+          )}
 
           {historicalLogs.map((log) => {
             const year = log.log_date.split('-')[0];

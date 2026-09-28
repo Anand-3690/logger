@@ -2,12 +2,99 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export default defineConfig(() => {
   return {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        name: 'api-dev-server-middleware',
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            if (!req.url?.startsWith('/api/')) return next();
+            const host = req.headers.host || 'localhost:3000';
+            const urlObj = new URL(req.url, `http://${host}`);
+            const pathname = urlObj.pathname;
+
+            if (pathname === '/api/download-pdf') {
+              return next();
+            }
+
+            let handlerModule: any = null;
+            try {
+              if (pathname === '/api/notifications/vapid-public-key') {
+                handlerModule = await import('./api/notifications/vapid-public-key.ts');
+              } else if (pathname === '/api/notifications/subscribe') {
+                handlerModule = await import('./api/notifications/subscribe.ts');
+              } else if (pathname === '/api/notifications/unsubscribe') {
+                handlerModule = await import('./api/notifications/unsubscribe.ts');
+              } else if (pathname === '/api/notifications/test') {
+                handlerModule = await import('./api/notifications/test.ts');
+              } else if (pathname === '/api/cron/on-this-day') {
+                handlerModule = await import('./api/cron/on-this-day.ts');
+              } else if (pathname === '/api/cron/status') {
+                handlerModule = await import('./api/cron/status.ts');
+              } else if (pathname === '/api/cron/notify') {
+                handlerModule = await import('./api/cron/notify.ts');
+              }
+            } catch (importErr) {
+              console.warn('[Vite API Middleware Import Error]:', importErr);
+            }
+
+            if (handlerModule && handlerModule.default) {
+              let body = '';
+              req.on('data', (chunk) => {
+                body += chunk;
+              });
+              req.on('end', async () => {
+                try {
+                  let parsedBody: any = {};
+                  if (body) {
+                    try {
+                      parsedBody = JSON.parse(body);
+                    } catch {
+                      parsedBody = body;
+                    }
+                  }
+                  (req as any).body = parsedBody;
+                  (req as any).query = Object.fromEntries(urlObj.searchParams.entries());
+
+                  const mockRes = {
+                    setHeader(name: string, value: any) {
+                      res.setHeader(name, value);
+                      return this;
+                    },
+                    status(code: number) {
+                      res.statusCode = code;
+                      return this;
+                    },
+                    json(data: any) {
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(JSON.stringify(data));
+                    },
+                    end(data?: any) {
+                      res.end(data);
+                    },
+                  };
+
+                  await handlerModule.default(req, mockRes);
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: err?.message || 'Server error' }));
+                }
+              });
+              return;
+            }
+
+            next();
+          });
+        },
+      },
       {
         name: 'pdf-download-middleware',
         configureServer(server) {

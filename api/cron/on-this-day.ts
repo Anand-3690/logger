@@ -1,27 +1,68 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 
-// Configure Web Push with your VAPID keys from .env
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@dailyaccomplishments.app',
-  process.env.VAPID_PUBLIC_KEY as string,
-  process.env.VAPID_PRIVATE_KEY as string
-);
+const DEFAULT_VAPID_PUBLIC_KEY =
+  'BBM7QfZtYfyBHqQHjROalKr64BPK8VOajfsNEkI9dPkdYpnDoq5gfnOIVHnrrX5C_dJoBXENqsH7eFyY0iFpRdU';
+const DEFAULT_VAPID_PRIVATE_KEY =
+  '3lKgFmaU5leTosE5cEya4DMEBgFoF35twqIcDBegvRM';
+
+const vapidPublic =
+  process.env.VAPID_PUBLIC_KEY ||
+  process.env.VITE_VAPID_PUBLIC_KEY ||
+  DEFAULT_VAPID_PUBLIC_KEY;
+const vapidPrivate = process.env.VAPID_PRIVATE_KEY || DEFAULT_VAPID_PRIVATE_KEY;
+const vapidSubject =
+  process.env.VAPID_SUBJECT || 'mailto:admin@dailyaccomplishments.app';
+
+if (vapidPublic && vapidPrivate) {
+  try {
+    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
+  } catch (err) {
+    console.warn('[VAPID Setup Warning]:', err);
+  }
+}
 
 // Initialize Supabase Client
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL as string,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY as string
+  process.env.VITE_SUPABASE_URL || 'https://fgvngijqikcxdrjvdzfi.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    'sb_publishable_xlhoYm36tJin5GtwYc7c-A_MLAoq2lN'
 );
 
 export default async function handler(req: any, res: any) {
-  try {
-    const today = new Date();
-    const targetMonth = today.getMonth() + 1;
-    const targetDay = today.getDate();
-    const targetYear = today.getFullYear();
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    // 1. Fetch eligible categories (is_on_this_day = true OR name = 'Guruhari Darshan')
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  try {
+    // 1. Determine target date (supports ?date=YYYY-MM-DD or defaults to local IST date)
+    let targetYear: number;
+    let targetMonth: number;
+    let targetDay: number;
+
+    const requestedDate = req.query?.date || req.body?.date;
+    if (requestedDate && typeof requestedDate === 'string' && requestedDate.includes('-')) {
+      const parts = requestedDate.split('T')[0].split('-').map(Number);
+      targetYear = parts[0];
+      targetMonth = parts[1];
+      targetDay = parts[2];
+    } else {
+      // Calculate IST time (UTC+5:30)
+      const now = new Date();
+      const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+      targetYear = istDate.getUTCFullYear();
+      targetMonth = istDate.getUTCMonth() + 1;
+      targetDay = istDate.getUTCDate();
+    }
+
+    const formattedTarget = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+
+    // 2. Fetch eligible categories (is_on_this_day = true OR name = 'Guruhari Darshan')
     let eligibleCategories: Array<{ id: string; name: string }> = [];
 
     const { data: catData, error: catError } = await supabase
@@ -29,15 +70,14 @@ export default async function handler(req: any, res: any) {
       .select('id, name, is_on_this_day');
 
     if (catError) {
-      // Fallback if is_on_this_day column doesn't exist yet in remote schema
-      const { data: fallbackCats, error: fbError } = await supabase
+      console.warn('[On This Day Cron] Categories query fallback:', catError.message);
+      const { data: fallbackCats } = await supabase
         .from('categories')
         .select('id, name');
 
-      if (fbError) {
-        return res.status(500).json({ error: fbError.message });
-      }
-      eligibleCategories = (fallbackCats || []).filter((c: any) => c.name === 'Guruhari Darshan');
+      eligibleCategories = (fallbackCats || []).filter(
+        (c: any) => c.name === 'Guruhari Darshan'
+      );
     } else {
       eligibleCategories = (catData || []).filter(
         (c: any) => c.is_on_this_day === true || c.name === 'Guruhari Darshan'
@@ -45,62 +85,56 @@ export default async function handler(req: any, res: any) {
     }
 
     if (eligibleCategories.length === 0) {
-      return res.status(200).json({ success: true, message: 'No categories configured for On This Day' });
+      return res.status(200).json({
+        success: true,
+        message: 'No categories configured for On This Day',
+        targetDate: formattedTarget,
+        sent: 0,
+      });
     }
 
     const eligibleCategoryIds = eligibleCategories.map((c) => c.id);
     const categoryMap = new Map<string, string>(eligibleCategories.map((c) => [c.id, c.name]));
 
-    // 2. Query historical matches for enabled categories
-    let matchedLogs: Array<{ id: string; log_date: string; category_id: string }> = [];
+    // 3. Query historical matches for enabled categories
+    let matchedLogs: Array<{ id: string; log_date: string; category_id: string; notes?: string }> = [];
 
     const { data: logs, error: logsError } = await supabase
       .from('daily_logs')
-      .select('id, log_date, category_id')
+      .select('id, log_date, category_id, notes')
       .in('category_id', eligibleCategoryIds);
 
     if (!logsError && logs && logs.length > 0) {
       matchedLogs = logs.filter((log: any) => {
         if (!log.log_date) return false;
-        const parts = log.log_date.split('-');
+        const cleanDate = String(log.log_date).split('T')[0];
+        const parts = cleanDate.split('-');
         if (parts.length < 3) return false;
         const [y, m, d] = parts.map(Number);
         return m === targetMonth && d === targetDay && y !== targetYear;
       });
     }
 
-    // Fallback to PostgreSQL RPC for Guruhari Darshan if direct query found nothing
-    if (matchedLogs.length === 0 && eligibleCategories.some((c) => c.name === 'Guruhari Darshan')) {
-      try {
-        const { data: rpcLogs } = await supabase.rpc('get_guruhari_on_this_day', {
-          target_month: targetMonth,
-          target_day: targetDay,
-        });
-        if (rpcLogs && Array.isArray(rpcLogs) && rpcLogs.length > 0) {
-          const guruhariCat = eligibleCategories.find((c) => c.name === 'Guruhari Darshan');
-          matchedLogs = rpcLogs.map((l: any) => ({
-            id: l.id,
-            log_date: l.log_date,
-            category_id: guruhariCat?.id || '',
-          }));
-        }
-      } catch {
-        // RPC is optional fallback
-      }
-    }
-
     if (matchedLogs.length === 0) {
-      return res.status(200).json({ success: true, message: 'No past entries found for today in configured categories' });
+      return res.status(200).json({
+        success: true,
+        message: 'No past entries found for today in configured categories',
+        targetDate: formattedTarget,
+        eligibleCategories: eligibleCategories.map((c) => c.name),
+        sent: 0,
+      });
     }
 
-    // 3. Fetch Push Subscriptions natively from Supabase
+    // 4. Fetch Push Subscriptions natively from Supabase
     const { data: subscriptions, error: subError } = await supabase
       .from('push_subscriptions')
       .select('id, subscription_json');
 
-    if (subError) throw subError;
+    if (subError) {
+      console.warn('[On This Day Cron] Subscriptions query warning:', subError.message);
+    }
 
-    // 4. Formulate Notification Details
+    // 5. Formulate Notification Details
     const uniqueCatNames = Array.from(
       new Set(
         matchedLogs
@@ -109,31 +143,41 @@ export default async function handler(req: any, res: any) {
       )
     );
 
-    const title = uniqueCatNames.length === 1
-      ? `${uniqueCatNames[0]}: On This Day`
-      : 'On This Day: Memories Found';
+    const title =
+      uniqueCatNames.length === 1
+        ? `${uniqueCatNames[0]}: On This Day`
+        : 'On This Day: Memories Found';
 
-    const body = uniqueCatNames.length === 1
-      ? `You have ${matchedLogs.length} memories from this day in history. Tap to read.`
-      : `You have ${matchedLogs.length} memories across ${uniqueCatNames.slice(0, 3).join(', ')}${uniqueCatNames.length > 3 ? ' and more' : ''}. Tap to view.`;
+    const body =
+      uniqueCatNames.length === 1
+        ? `You have ${matchedLogs.length} memories from this day in history. Tap to read.`
+        : `You have ${matchedLogs.length} memories across ${uniqueCatNames.slice(0, 3).join(', ')}${
+            uniqueCatNames.length > 3 ? ' and more' : ''
+          }. Tap to view.`;
 
     const payload = JSON.stringify({
       title,
       body,
       icon: '/assets/icon-192.png',
+      badge: '/assets/icon-192.png',
       data: { url: '/on-this-day' },
+      actions: [{ action: 'view', title: 'Open Memories' }],
     });
 
     let sentCount = 0;
-    for (const sub of subscriptions || []) {
+    const subsList = subscriptions || [];
+
+    for (const sub of subsList) {
       try {
-        const pushSub = typeof sub.subscription_json === 'string'
-          ? JSON.parse(sub.subscription_json)
-          : sub.subscription_json;
+        const pushSub =
+          typeof sub.subscription_json === 'string'
+            ? JSON.parse(sub.subscription_json)
+            : sub.subscription_json;
 
         await webpush.sendNotification(pushSub, payload);
         sentCount++;
       } catch (err: any) {
+        console.warn('[Push Notification Error]:', err.statusCode || err.message);
         if (err.statusCode === 404 || err.statusCode === 410) {
           await supabase.from('push_subscriptions').delete().eq('id', sub.id);
         }
@@ -142,12 +186,16 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({
       success: true,
-      sent: sentCount,
+      targetDate: formattedTarget,
       memoriesCount: matchedLogs.length,
       categories: uniqueCatNames,
+      subscribersCount: subsList.length,
+      sent: sentCount,
+      title,
+      body,
     });
   } catch (error: any) {
-    console.error('Cron Error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('[On This Day Cron Error]:', error);
+    return res.status(500).json({ error: error.message || 'Cron error' });
   }
 }

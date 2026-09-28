@@ -12,7 +12,7 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
-import { registerServiceWorker } from './utils/pushNotifications';
+import { registerServiceWorker, checkAndTriggerDailyOnThisDay } from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth } from './utils/dateUtils';
 import { Plus, Check, AlertCircle, Loader2, Search, X } from 'lucide-react';
 import { processSyncQueue, pullFromCloud, setupRealtimeSync } from './syncEngine';
@@ -133,14 +133,38 @@ function AuthenticatedApp() {
 
   // PWA Setup
   useEffect(() => {
-    registerServiceWorker().then(reg => {
-      if (reg) reg.update().catch(err => console.warn('SW update failed:', err));
-    }).catch((err) => console.warn('Service worker registration failed:', err));
+    registerServiceWorker()
+      .then((reg) => {
+        if (reg) reg.update().catch((err) => console.warn('SW update failed:', err));
+        // Check for On This Day memories once per day when app opens
+        checkAndTriggerDailyOnThisDay().catch((err) =>
+          console.warn('On This Day check note:', err)
+        );
+      })
+      .catch((err) => console.warn('Service worker registration failed:', err));
+
+    const handlePopState = () => {
+      if (window.location.pathname.includes('/on-this-day')) {
+        setCurrentView('on-this-day');
+      } else if (window.location.pathname.includes('/reports')) {
+        setCurrentView('reports');
+      } else {
+        setCurrentView('dashboard');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
 
     const handleMessage = async (event: MessageEvent) => {
       if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
         window.history.pushState(null, '', event.data.url);
-        setForceRender(prev => prev + 1);
+        if (event.data.url.includes('/on-this-day')) {
+          setCurrentView('on-this-day');
+        } else if (event.data.url.includes('/reports')) {
+          setCurrentView('reports');
+        } else {
+          setCurrentView('dashboard');
+        }
+        setForceRender((prev) => prev + 1);
       } else if (event.data && event.data.type === 'RECORD_LOG' && event.data.data) {
         try {
           const { log_date, category_id, notes, status } = event.data.data;
@@ -174,7 +198,10 @@ function AuthenticatedApp() {
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      navigator.serviceWorker?.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   // ==========================================

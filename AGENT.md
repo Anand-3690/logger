@@ -72,3 +72,11 @@
 - **Log Entry Inline Editing (Priority 2):** Edit modals and quick-updates wired across `ActivityFeed`, `LogModal`, and `App.tsx`.
 - **Engineering Docs & PDF Generation (Priority 1):** Built `TechDocsModal` and multi-page technical specification PDF generator `src/utils/techSpecPdf.ts`.
 - **Scheduled Push Notifications & Diagnostics (Priority 1):** Created `NotificationSettingsModal`, `api/cron/notify.ts`, `api/cron/status.ts`, and `api/notifications/test.ts`.
+- **"On This Day" Notification Engine & Pipeline Fix:**
+  - Added missing `is_on_this_day` column to remote Supabase `categories` PostgreSQL table, setting 'Guruhari Darshan' to active by default.
+  - Generated and provisioned standard VAPID key pairs (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VITE_VAPID_PUBLIC_KEY`) in `.env` and `.env.example`.
+  - Implemented missing Web Push endpoints: `api/notifications/vapid-public-key.ts`, `api/notifications/subscribe.ts`, and `api/notifications/unsubscribe.ts`.
+  - Implemented dual-resilience push subscription persistence (both via backend `/api/notifications/subscribe` and direct Supabase `push_subscriptions` upsert).
+  - Configured Vite middleware in `vite.config.ts` to seamlessly route `/api/notifications/*` and `/api/cron/*` endpoints in local development.
+  - Implemented automated in-app daily check (`checkAndTriggerDailyOnThisDay`) in `App.tsx` so users receive On This Day alerts locally even when using the app as an offline PWA.
+  - Added dedicated "Test 'On This Day' Alert" buttons in both `NotificationSettingsCard.tsx` and `OnThisDayView.tsx` with live diagnostic memory summaries.

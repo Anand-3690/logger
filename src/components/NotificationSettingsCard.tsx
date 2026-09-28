@@ -18,10 +18,13 @@ import {
   subscribeToWebPush,
   unsubscribeFromWebPush,
   sendTestPushNotification,
+  sendTestOnThisDayNotification,
   triggerCronCheck,
   fetchCronStatus,
   PushStatus,
+  CronStatusData,
 } from '../utils/pushNotifications';
+import { Calendar, History } from 'lucide-react';
 
 interface NotificationSettingsCardProps {
   authToken?: string | null;
@@ -38,15 +41,11 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
     isSubscribed: false,
     subscription: null,
   });
-  const [cronStatus, setCronStatus] = useState<{
-    isRunning: boolean;
-    currentServerTime: string;
-    categoriesWithReminders: { id: string; name: string; reminder_time: string }[];
-    activeSubscribersCount: number;
-  } | null>(null);
+  const [cronStatus, setCronStatus] = useState<CronStatusData | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isTesting, setIsTesting] = useState<boolean>(false);
+  const [isTestingOnThisDay, setIsTestingOnThisDay] = useState<boolean>(false);
   const [isCronRunning, setIsCronRunning] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
@@ -113,6 +112,27 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleSendTestOnThisDay = async () => {
+    try {
+      setIsTestingOnThisDay(true);
+      setFeedbackMsg(null);
+      const res = await sendTestOnThisDayNotification(authToken);
+      setFeedbackMsg({
+        type: 'success',
+        text: res.message || 'On This Day notification dispatched!',
+      });
+      if (onRefreshLogs) setTimeout(onRefreshLogs, 1500);
+      await checkStatus();
+    } catch (err: any) {
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || 'Failed to dispatch On This Day notification.',
+      });
+    } finally {
+      setIsTestingOnThisDay(false);
     }
   };
 
@@ -231,6 +251,21 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
               <strong>{cronStatus.activeSubscribersCount || 0}</strong> registered subscriber(s)
             </span>
           </div>
+
+          {cronStatus.todayMemoriesCount !== undefined && cronStatus.todayMemoriesCount > 0 && (
+            <div className="w-full mt-2 pt-2 border-t border-amber-200/50 flex items-center justify-between text-[11px] text-amber-900 bg-amber-50/90 px-2.5 py-1.5 rounded-xl border border-amber-200/80">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  <strong>{cronStatus.todayMemoriesCount} memories</strong> found for today (
+                  {cronStatus.onThisDayCategories?.map((c) => c.name).join(', ') || 'On This Day'})
+                </span>
+              </span>
+              <span className="font-bold text-amber-700 shrink-0 text-[10px] uppercase tracking-wider bg-amber-100/80 px-1.5 py-0.5 rounded-md">
+                Alert Ready
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -252,6 +287,23 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
               <Send className="w-3.5 h-3.5 text-blue-400" />
             )}
             <span>Send Test Notification</span>
+          </button>
+
+          {/* Test On This Day Notification Button */}
+          <button
+            id="btn-send-test-on-this-day"
+            type="button"
+            onClick={handleSendTestOnThisDay}
+            disabled={isTestingOnThisDay || !status.isSubscribed}
+            title={!status.isSubscribed ? 'Enable notifications first' : "Test 'On This Day' alert for today's historical memories"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs"
+          >
+            {isTestingOnThisDay ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <History className="w-3.5 h-3.5 text-amber-200" />
+            )}
+            <span>Test "On This Day" Alert</span>
           </button>
 
           {/* Trigger Cron Tick Now */}
