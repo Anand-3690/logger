@@ -263,7 +263,7 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Meditation, Workout, Book Reading, Deep Work..."
+                  placeholder="e.g. Seva, Thaal, Guruhari Darshan, Sabha..."
                   className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs font-medium text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />

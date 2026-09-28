@@ -288,7 +288,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
             {/* Log Notes */}
             {log.notes && (
-              <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed whitespace-pre-line mb-3 pl-0.5">
+              <p className="text-xs sm:text-sm text-neutral-800 leading-[1.8] whitespace-pre-line mb-3 pl-0.5">
                 {log.notes}
               </p>
             )}

@@ -18,6 +18,7 @@ import {
   Pencil,
   Maximize2,
   Minimize2,
+  Mic,
 } from 'lucide-react';
 
 interface LogModalProps {
@@ -91,6 +92,118 @@ export const LogModal: React.FC<LogModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isNotesExpanded, setIsNotesExpanded] = useState<boolean>(false);
   const prevIsOpenRef = useRef<boolean>(false);
+
+  // Web Speech API Voice Dictation
+  const isSpeechSupported =
+    typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [speechLang, setSpeechLang] = useState<'gu-IN' | 'en-IN'>('gu-IN');
+  const recognitionRef = useRef<any>(null);
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  };
+
+  const insertDictatedText = (transcript: string) => {
+    if (!transcript) return;
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setNotes((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      return;
+    }
+    const start = textarea.selectionStart ?? notes.length;
+    const end = textarea.selectionEnd ?? notes.length;
+    const before = notes.slice(0, start);
+    const after = notes.slice(end);
+    const needsLeadingSpace = before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n');
+    const inserted = (needsLeadingSpace ? ' ' : '') + transcript;
+    const newNotes = before + inserted + after;
+    setNotes(newNotes);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const pos = start + inserted.length;
+        textareaRef.current.setSelectionRange(pos, pos);
+      }
+    }, 10);
+  };
+
+  const toggleListening = () => {
+    if (!isSpeechSupported) return;
+
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    try {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = speechLang;
+
+      recognition.onresult = (event: any) => {
+        let chunk = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            chunk += event.results[i][0].transcript;
+          }
+        }
+        if (chunk.trim()) {
+          insertDictatedText(chunk.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setErrorMsg('Microphone access was denied or is unavailable.');
+        }
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+    } catch (err: any) {
+      console.error('Failed to start speech recognition:', err);
+      setErrorMsg('Could not start voice dictation.');
+      setIsListening(false);
+    }
+  };
+
+  const handleLangChange = (lang: 'gu-IN' | 'en-IN') => {
+    setSpeechLang(lang);
+    if (isListening) {
+      stopListening();
+    }
+  };
+
+  // Clean up speech recognition when modal closes or unmounts
+  useEffect(() => {
+    if (!isOpen) {
+      stopListening();
+    }
+    return () => {
+      stopListening();
+    };
+  }, [isOpen]);
 
   // Auto-grow textarea with content
   useEffect(() => {
@@ -299,7 +412,7 @@ export const LogModal: React.FC<LogModalProps> = ({
                 {editingLog ? 'Edit Activity Log' : 'Log Daily Activity'}
               </h3>
               <p className="text-xs text-neutral-500 font-medium">
-                {editingLog ? 'Update details, timestamp, or photos for this record' : 'Record your work, fitness, reading, and habits'}
+                {editingLog ? 'Update details, timestamp, or photos for this record' : 'Record your satsang notes, seva, thaal, and daily reflections'}
               </p>
             </div>
           </div>
@@ -514,6 +627,66 @@ export const LogModal: React.FC<LogModalProps> = ({
                 <span className="text-[10px] font-normal text-neutral-400 lowercase">(optional)</span>
               </label>
               <div className="flex items-center gap-2 ml-auto">
+                {isSpeechSupported && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+                      <button
+                        type="button"
+                        onClick={() => handleLangChange('gu-IN')}
+                        className={`px-1.5 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                          speechLang === 'gu-IN'
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                        title="Voice dictation in Gujarati"
+                      >
+                        ગુજરાતી
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleLangChange('en-IN')}
+                        className={`px-1.5 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                          speechLang === 'en-IN'
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                        title="Voice dictation in English"
+                      >
+                        EN
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      id="btn-voice-dictation"
+                      onClick={toggleListening}
+                      title={
+                        isListening
+                          ? 'Stop voice dictation'
+                          : `Start voice dictation (${speechLang === 'gu-IN' ? 'Gujarati' : 'English'})`
+                      }
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        isListening
+                          ? 'bg-rose-500 text-white shadow-xs ring-2 ring-rose-400/50 animate-pulse'
+                          : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border border-neutral-200'
+                      }`}
+                    >
+                      {isListening ? (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                          <Mic className="w-3 h-3" />
+                          <span className="text-[10px]">Listening...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3 h-3 text-neutral-500" />
+                          <span className="text-[10px] hidden sm:inline">Voice</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 <span className="text-[10px] sm:text-[11px] text-neutral-400 font-medium">
                   {notes.length} chars {notes.trim() ? `• ${notes.trim().split(/\s+/).length}w` : ''}
                 </span>
@@ -544,8 +717,8 @@ export const LogModal: React.FC<LogModalProps> = ({
               rows={isNotesExpanded ? 12 : 6}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="What did you work on, read, or accomplish? Write your notes, reflections, insights, or details in Gujarati or English..."
-              className={`w-full px-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm sm:text-base text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-y leading-relaxed font-sans shadow-2xs ${
+              placeholder="Record your notes, satsang highlights, thaal, seva, or reflections (Gujarati or English)..."
+              className={`w-full px-4 py-3 bg-white border border-neutral-200 rounded-2xl text-sm sm:text-base text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-y leading-[1.8] font-sans shadow-2xs ${
                 isNotesExpanded ? 'min-h-[280px] sm:min-h-[360px]' : 'min-h-[140px] sm:min-h-[170px]'
               }`}
             />
