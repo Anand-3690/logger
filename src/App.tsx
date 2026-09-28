@@ -12,6 +12,7 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
+import { resolveMigratedIcon } from './components/CategoryIcon';
 import {
   registerServiceWorker,
   checkAndTriggerDailyOnThisDay,
@@ -90,7 +91,15 @@ function AuthenticatedApp() {
   // ==========================================
   // LOCAL-FIRST DATA LAYER (DEXIE)
   // ==========================================
-  const categories = useLiveQuery(() => db.categories.toArray()) || [];
+  const rawCategories = useLiveQuery(() => db.categories.toArray()) || [];
+  const categories = useMemo(() => {
+    return [...rawCategories].sort((a, b) => {
+      const orderA = a.sort_order ?? 999999;
+      const orderB = b.sort_order ?? 999999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name);
+    });
+  }, [rawCategories]);
   
   const rawCurrentDateLogs = useLiveQuery(
     async () => {
@@ -515,6 +524,49 @@ function AuthenticatedApp() {
     }
   };
 
+  const handleReorderCategories = async (reordered: Category[]) => {
+    try {
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        for (let i = 0; i < reordered.length; i++) {
+          const cat = reordered[i];
+          const updated = { ...cat, sort_order: i };
+          await db.categories.put(updated);
+          await db.syncQueue.put({ id: cat.id, table: 'categories', action: 'upsert', timestamp: Date.now() });
+        }
+      });
+      processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
+    } catch (err) {
+      console.error('Failed to reorder categories:', err);
+    }
+  };
+
+  // Safe one-time Lucide line icon migration for legacy emoji icons
+  useEffect(() => {
+    const migrateLegacyIcons = async () => {
+      try {
+        const allCats = await db.categories.toArray();
+        let updatedCount = 0;
+        await db.transaction('rw', db.categories, db.syncQueue, async () => {
+          for (const cat of allCats) {
+            const migrated = resolveMigratedIcon(cat.icon, cat.name);
+            if (migrated !== cat.icon) {
+              const updated = { ...cat, icon: migrated };
+              await db.categories.put(updated);
+              await db.syncQueue.put({ id: cat.id, table: 'categories', action: 'upsert', timestamp: Date.now() });
+              updatedCount++;
+            }
+          }
+        });
+        if (updatedCount > 0) {
+          processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
+        }
+      } catch (err) {
+        console.warn('Icon migration check:', err);
+      }
+    };
+    migrateLegacyIcons();
+  }, []);
+
   const handleDeleteLog = async (id: string) => {
     try {
       await db.transaction('rw', db.dailyLogs, db.syncQueue, async () => {
@@ -720,7 +772,11 @@ function AuthenticatedApp() {
           setPreselectedCategoryId(null);
           setPreselectedNotes(null);
         }}
-        categories={categories}
+        categories={
+          editingLog
+            ? categories.filter((c) => c.is_active !== false || c.id === editingLog.category_id)
+            : categories.filter((c) => c.is_active !== false)
+        }
         selectedDate={selectedDate}
         editingLog={editingLog}
         defaultCategoryId={preselectedCategoryId}
@@ -738,9 +794,11 @@ function AuthenticatedApp() {
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
         categories={categories}
+        logs={allLogs}
         onAddCategory={handleAddCategory}
         onUpdateCategory={handleUpdateCategory}
         onDeleteCategory={handleDeleteCategory}
+        onReorderCategories={handleReorderCategories}
       />
 
       <PhotoLightbox

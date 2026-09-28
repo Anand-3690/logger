@@ -61,6 +61,10 @@ import {
   Wrench,
   Dna,
   HeartHandshake,
+  HandHeart,
+  Users,
+  Tent,
+  Scroll,
   XCircle,
   LucideIcon
 } from 'lucide-react';
@@ -109,6 +113,10 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   TreePine,
   Mountain,
   HeartHandshake,
+  HandHeart,
+  Users,
+  Tent,
+  Scroll,
   Smile,
 
   // Lifestyle & Hobbies
@@ -173,26 +181,87 @@ export const POPULAR_EMOJIS = [
   '🍎', '🏆', '✍️', '🚲', '🏖️', '🛠️', '🔬', '💡'
 ];
 
+export const EMOJI_TO_LUCIDE: Record<string, string> = {
+  '👥': 'Users',
+  '🙏': 'HeartHandshake',
+  '🍲': 'Utensils',
+  '📖': 'BookOpen',
+  '📚': 'BookOpen',
+  '✈️': 'Plane',
+  '✨': 'Sparkles',
+  '☀️': 'Sun',
+  '🌅': 'Sun',
+  '🏕️': 'Tent',
+  '⛺': 'Tent',
+  '❤️': 'Heart',
+  '💖': 'Heart',
+  '🧘': 'HeartHandshake',
+  '🏃': 'Activity',
+  '💻': 'Laptop',
+  '🎯': 'Target',
+  '🎓': 'GraduationCap',
+  '🎵': 'Music',
+  '🎨': 'Palette',
+};
+
+export const NAME_TO_LUCIDE: Record<string, string> = {
+  'Sabha': 'Users',
+  'Yuva Seva': 'Users',
+  'Seva': 'HeartHandshake',
+  'Thaal': 'Utensils',
+  'Kathavarta': 'BookOpen',
+  'Padhramni': 'Compass',
+  'Guruhari Darshan': 'Sun',
+  'Mahapuja': 'Sparkles',
+  'Shibir': 'Tent',
+  'GATE': 'GraduationCap',
+  'Travel': 'Plane',
+};
+
+export const resolveMigratedIcon = (iconName: string, categoryName?: string): string => {
+  if (ICON_MAP[iconName]) return iconName;
+  if (EMOJI_TO_LUCIDE[iconName]) return EMOJI_TO_LUCIDE[iconName];
+  if (categoryName && NAME_TO_LUCIDE[categoryName]) return NAME_TO_LUCIDE[categoryName];
+  return iconName;
+};
+
 export const AVAILABLE_ICONS = Object.keys(ICON_MAP);
 
 interface CategoryIconProps {
   name: string;
+  categoryName?: string;
   className?: string;
   size?: number;
 }
 
-export const CategoryIcon: React.FC<CategoryIconProps> = ({ name, className = 'w-5 h-5', size }) => {
+export const CategoryIcon: React.FC<CategoryIconProps> = ({
+  name,
+  categoryName,
+  className = 'w-5 h-5',
+  size,
+}) => {
   if (!name) {
+    if (categoryName && NAME_TO_LUCIDE[categoryName]) {
+      const Resolved = ICON_MAP[NAME_TO_LUCIDE[categoryName]];
+      if (Resolved) return <Resolved className={className} size={size} />;
+    }
     return <Sparkles className={className} size={size} />;
   }
 
-  // Check if standard Lucide icon
+  // 1. Direct match in Lucide icon map
   const IconComponent = ICON_MAP[name];
   if (IconComponent) {
     return <IconComponent className={className} size={size} />;
   }
 
-  // Check if emoji / single character / unicode
+  // 2. Safe emoji-to-Lucide line icon migration
+  const migratedLucideName = EMOJI_TO_LUCIDE[name] || (categoryName ? NAME_TO_LUCIDE[categoryName] : undefined);
+  if (migratedLucideName && ICON_MAP[migratedLucideName]) {
+    const MigratedComponent = ICON_MAP[migratedLucideName];
+    return <MigratedComponent className={className} size={size} />;
+  }
+
+  // 3. Fallback: emoji or unicode character
   const isEmoji = /\p{Extended_Pictographic}/u.test(name) || name.length <= 4;
   if (isEmoji) {
     return (

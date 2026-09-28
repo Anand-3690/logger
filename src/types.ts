@@ -6,6 +6,7 @@ export interface Category {
   reminder_time?: string | null; // e.g. "09:00", "20:30" (HH:MM 24h format)
   is_active: boolean;
   is_on_this_day?: boolean; // When true, included in "On This Day" retrospective view and notifications
+  sort_order?: number;
 }
 
 export const isCategoryOnThisDay = (cat: { is_on_this_day?: boolean; name: string }): boolean => {
