@@ -27,12 +27,14 @@ import {
   addDaysToDate,
 } from '../utils/dateUtils';
 import { getTodayLogicalDate, getEffectiveLogDate } from '../utils/dayBoundary';
+import { MemoryCard, YearChips } from './MemoryCard';
 
 interface OnThisDayViewProps {
   onBack: () => void;
+  onAddReflection?: (log: DailyLog) => void;
 }
 
-export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
+export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddReflection }) => {
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [targetDate, setTargetDate] = useState<string>(() => getTodayLogicalDate());
@@ -98,6 +100,17 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
       .sort((a, b) => new Date(getEffectiveLogDate(b)).getTime() - new Date(getEffectiveLogDate(a)).getTime());
   }, [targetMonth, targetDay, targetYear, selectedCategoryId, eligibleCategories, eligibleCategoryIds, categories]);
 
+  const uniqueYears = useMemo(() => {
+    if (!historicalLogs || historicalLogs.length === 0) return [];
+    const set = new Set<number>();
+    for (const log of historicalLogs) {
+      const eff = getEffectiveLogDate(log);
+      const y = parseInt(eff.split('-')[0], 10);
+      if (!isNaN(y)) set.add(y);
+    }
+    return Array.from(set).sort((a, b) => b - a);
+  }, [historicalLogs]);
+
   const handlePrevDay = () => {
     setTargetDate((prev) => addDaysToDate(prev, -1));
   };
@@ -135,14 +148,15 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-2 bg-white/60 hover:bg-white rounded-xl shadow-xs border border-white/80 transition-colors"
+            className="p-2 bg-white/60 hover:bg-white rounded-xl shadow-xs border border-white/80 transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
             title="Back to Dashboard"
+            aria-label="Back to Dashboard"
           >
             <ArrowLeft className="w-5 h-5 text-neutral-700" />
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-neutral-900 leading-tight">On This Day</h2>
+              <h2 className="text-lg font-bold text-neutral-900 leading-tight">On this day</h2>
               <span className="text-xs font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
                 Memories
               </span>
@@ -157,22 +171,22 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
           {!isToday && (
             <button
               onClick={handleResetToday}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/80 hover:bg-white text-blue-700 text-xs font-semibold rounded-xl border border-white/80 shadow-xs transition-colors"
+              className="flex min-h-[44px] items-center gap-1.5 px-3 py-2 bg-white/80 hover:bg-white text-blue-700 text-xs font-semibold rounded-xl border border-white/80 shadow-2xs transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Today</span>
             </button>
           )}
 
-          {/* Manage Categories Button */}
+          {/* Manage Categories Button - sits in the page header row */}
           <button
             id="btn-manage-on-this-day-categories"
             onClick={() => setIsConfigModalOpen(true)}
-            title="Choose which categories are included in On This Day"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100/90 text-purple-700 text-xs font-bold rounded-xl border border-purple-200/80 shadow-xs transition-colors"
+            title="Choose which categories are included in On this day"
+            className="flex min-h-[44px] items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100/90 text-purple-700 text-xs font-semibold rounded-xl border border-purple-200/80 shadow-2xs transition-colors cursor-pointer"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Choose Categories</span>
+            <span>Choose categories</span>
           </button>
         </div>
       </div>
@@ -272,17 +286,18 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
             <History className="w-7 h-7" />
           </div>
           <h3 className="text-base font-bold text-neutral-800">
-            No categories enabled for &quot;On This Day&quot;
+            No categories enabled for On this day
           </h3>
           <p className="text-xs sm:text-sm text-neutral-500 max-w-sm">
             Choose which categories (such as spiritual routines or diary entries) should be included in retrospective memories and morning notifications.
           </p>
           <button
+            type="button"
             onClick={() => setIsConfigModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs"
+            className="flex min-h-[44px] items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl transition-all shadow-xs cursor-pointer"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Select Categories Now</span>
+            <span>Choose categories</span>
           </button>
         </div>
       ) : historicalLogs === undefined ? (
@@ -312,65 +327,32 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack }) => {
             </span>
           </div>
 
-          {historicalLogs.map((log) => {
-            const effDate = getEffectiveLogDate(log);
-            const year = effDate.split('-')[0];
-            const yearsAgo = targetYear - parseInt(year, 10);
-            const categoryName = log.category?.name || 'Activity';
-            const categoryColor = log.category?.color_code || '#8b5cf6';
+          {/* Sticky Year Chips Navigation */}
+          <YearChips years={uniqueYears} />
 
-            return (
-              <div
-                key={log.id}
-                className="glass-panel rounded-2xl p-5 border-l-4 relative overflow-hidden group hover:shadow-md transition-all"
-                style={{ borderLeftColor: categoryColor }}
-              >
-                {/* Large Background Year Watermark */}
-                <div className="absolute top-0 right-0 bg-gradient-to-bl from-purple-100/60 to-transparent text-purple-900/15 font-black text-5xl sm:text-6xl px-4 py-2 rounded-bl-3xl pointer-events-none group-hover:scale-105 transition-transform duration-500">
-                  {year}
-                </div>
+          <div className="space-y-4">
+            {historicalLogs.map((log, index) => {
+              const effDate = getEffectiveLogDate(log);
+              const year = parseInt(effDate.split('-')[0], 10);
+              const isFirstOfYear =
+                index === 0 ||
+                parseInt(getEffectiveLogDate(historicalLogs[index - 1]).split('-')[0], 10) !== year;
 
-                <div className="relative z-10 space-y-3">
-                  {/* Top Metadata Header */}
-                  <div className="flex items-center gap-2 flex-wrap pr-16">
-                    {/* Category Pill */}
-                    <span
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold text-white shadow-xs"
-                      style={{ backgroundColor: categoryColor }}
-                    >
-                      <CategoryIcon name={log.category?.icon || 'Tag'} className="w-3.5 h-3.5" />
-                      <span>{categoryName}</span>
-                    </span>
-
-                    {/* Anniversary Delta Badge */}
-                    <span className="text-xs font-semibold text-slate-700 bg-white/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-slate-200/80 shadow-xs">
-                      {yearsAgo === 1 ? '1 year ago' : `${yearsAgo} years ago`}
-                    </span>
-
-                    {/* Date String */}
-                    <span className="text-xs text-slate-600 font-medium">
-                      {effDate}
-                    </span>
-                  </div>
-
-                  {/* Log Notes with full Gujarati / multiline support */}
-                  {log.notes && (
-                    <p className="text-sm text-neutral-800 leading-relaxed whitespace-pre-line pr-6">
-                      {log.notes}
-                    </p>
-                  )}
-
-                  {/* Photo Attachment Preview */}
-                  <ActivityPhoto
-                    log={log as any}
-                    categoryName={categoryName}
-                    selectedDate={effDate}
-                    onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
-                  />
-                </div>
-              </div>
-            );
-          })}
+              return (
+                <MemoryCard
+                  key={log.id}
+                  log={log}
+                  onAddReflection={(selectedLog) => {
+                    if (onAddReflection) {
+                      onAddReflection(selectedLog);
+                    }
+                  }}
+                  onViewPhoto={(url, title) => setLightboxPhoto({ url, title })}
+                  isFirstOfYear={isFirstOfYear}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
 

@@ -60,6 +60,18 @@ function AuthenticatedApp() {
   const [selectedDate, setSelectedDate] = useState<string>(() => getTodayLogicalDate());
   const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentLocalMonth());
   const [preselectedCategoryId, setPreselectedCategoryId] = useState<string | null>(null);
+  const [preselectedNotes, setPreselectedNotes] = useState<string | null>(null);
+
+  const handleAddReflection = (log: DailyLog) => {
+    const todayLogical = getTodayLogicalDate(dayCutoffHour);
+    setSelectedDate(todayLogical);
+    setPreselectedCategoryId(log.category_id);
+    const firstLine = (log.notes || '').split('\n')[0].trim().slice(0, 100);
+    const quote = firstLine ? `> "${firstLine}"\n\n` : '';
+    setPreselectedNotes(quote);
+    setEditingLog(null);
+    setIsLogModalOpen(true);
+  };
 
   // Sync day cutoff from settings events
   useEffect(() => {
@@ -635,6 +647,7 @@ function AuthenticatedApp() {
         onNewLog={() => {
           setEditingLog(null);
           setPreselectedCategoryId(null);
+          setPreselectedNotes(null);
           setIsLogModalOpen(true);
         }}
         onSearch={() => setIsSearchOpen(true)}
@@ -649,10 +662,13 @@ function AuthenticatedApp() {
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:px-6 space-y-4">
         {currentView === 'on-this-day' ? (
-          <OnThisDayView onBack={() => {
-            setCurrentView('dashboard');
-            window.history.pushState(null, '', '/');
-          }} />
+          <OnThisDayView
+            onBack={() => {
+              setCurrentView('dashboard');
+              window.history.pushState(null, '', '/');
+            }}
+            onAddReflection={handleAddReflection}
+          />
         ) : currentView === 'dashboard' ? (
           <div className="space-y-4">
             <DaySelector
@@ -672,11 +688,13 @@ function AuthenticatedApp() {
               onOpenNewLog={(catId) => {
                 setEditingLog(null);
                 setPreselectedCategoryId(catId || null);
+                setPreselectedNotes(null);
                 setIsLogModalOpen(true);
               }}
               onEditLog={(log) => {
                 setEditingLog(log);
                 setPreselectedCategoryId(log.category_id);
+                setPreselectedNotes(null);
                 setIsLogModalOpen(true);
               }}
               onDeleteLog={handleDeleteLog}
@@ -700,11 +718,13 @@ function AuthenticatedApp() {
           setIsLogModalOpen(false);
           setEditingLog(null);
           setPreselectedCategoryId(null);
+          setPreselectedNotes(null);
         }}
         categories={categories}
         selectedDate={selectedDate}
         editingLog={editingLog}
         defaultCategoryId={preselectedCategoryId}
+        defaultNotes={preselectedNotes}
         onSaveLog={handleSaveLog}
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}

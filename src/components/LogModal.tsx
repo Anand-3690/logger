@@ -27,6 +27,7 @@ interface LogModalProps {
   selectedDate: string;
   editingLog?: DailyLog | null;
   defaultCategoryId?: string | null;
+  defaultNotes?: string | null;
   onSaveLog: (formData: FormData) => Promise<void>;
   onAddCategory: (category: {
     name: string;
@@ -57,6 +58,7 @@ export const LogModal: React.FC<LogModalProps> = ({
   selectedDate,
   editingLog,
   defaultCategoryId,
+  defaultNotes,
   onSaveLog,
   onAddCategory,
   onDeleteCategory,
@@ -116,7 +118,7 @@ export const LogModal: React.FC<LogModalProps> = ({
       } else {
         // Fresh modal open: reset form inputs
         setLogDate(selectedDate);
-        setNotes('');
+        setNotes(defaultNotes || '');
         setPhotoFile(null);
         setPhotoPreview(null);
         setPhotoDataUrl(null);
@@ -144,7 +146,7 @@ export const LogModal: React.FC<LogModalProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, selectedDate, categories, selectedCategoryId, editingLog, defaultCategoryId]);
+  }, [isOpen, selectedDate, categories, selectedCategoryId, editingLog, defaultCategoryId, defaultNotes]);
 
   if (!isOpen) return null;
 
