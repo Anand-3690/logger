@@ -14,6 +14,7 @@ import {
   X,
   Check,
   History,
+  Bell,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { ActivityPhoto } from './ActivityPhoto';
@@ -27,6 +28,11 @@ import {
   addDaysToDate,
 } from '../utils/dateUtils';
 import { getTodayLogicalDate, getEffectiveLogDate } from '../utils/dayBoundary';
+import {
+  sendTestOnThisDayNotification,
+  getPushNotificationStatus,
+  subscribeToWebPush,
+} from '../utils/pushNotifications';
 import { MemoryCard, YearChips } from './MemoryCard';
 
 interface OnThisDayViewProps {
@@ -138,6 +144,116 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddRefle
       processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
     } catch (err) {
       console.error('Failed to toggle category on-this-day status:', err);
+    }
+  };
+
+  // 4. Query matching historical logs on this calendar day across other (unselected) categories
+  const otherCategoryLogs = useLiveQuery(async () => {
+    const nonEligible = categories.filter((c) => !isCategoryOnThisDay(c));
+    if (nonEligible.length === 0) return [];
+
+    const nonEligibleIds = nonEligible.map((c) => c.id);
+    const logs = await db.dailyLogs.where('category_id').anyOf(nonEligibleIds).toArray();
+
+    return logs.filter((log) => {
+      const effDate = getEffectiveLogDate(log);
+      if (!effDate) return false;
+      const [logY, logM, logD] = effDate.split('-').map(Number);
+      return logM === targetMonth && logD === targetDay && logY !== targetYear;
+    });
+  }, [targetMonth, targetDay, targetYear, categories]);
+
+  const otherCategoryNames = useMemo(() => {
+    if (!otherCategoryLogs || otherCategoryLogs.length === 0) return [];
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+    const names = new Set(otherCategoryLogs.map((l) => catMap.get(l.category_id)).filter(Boolean));
+    return Array.from(names) as string[];
+  }, [otherCategoryLogs, categories]);
+
+  const [pushPermission, setPushPermission] = useState<string>('default');
+  const [testNotificationFeedback, setTestNotificationFeedback] = useState<string | null>(null);
+  const [isSendingTestNotification, setIsSendingTestNotification] = useState<boolean>(false);
+
+  useEffect(() => {
+    getPushNotificationStatus()
+      .then((s) => setPushPermission(s.permission))
+      .catch(() => {});
+  }, []);
+
+  const handleSelectAllCategories = async () => {
+    try {
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        for (const cat of categories) {
+          await db.categories.update(cat.id, { is_on_this_day: true });
+          await db.syncQueue.put({
+            id: cat.id,
+            table: 'categories',
+            action: 'upsert',
+            timestamp: Date.now(),
+          });
+        }
+      });
+      processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
+    } catch (err) {
+      console.error('Failed to select all categories:', err);
+    }
+  };
+
+  const handleResetToDefaultCategories = async () => {
+    try {
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        for (const cat of categories) {
+          const isGuruhari = cat.name === 'Guruhari Darshan';
+          await db.categories.update(cat.id, { is_on_this_day: isGuruhari });
+          await db.syncQueue.put({
+            id: cat.id,
+            table: 'categories',
+            action: 'upsert',
+            timestamp: Date.now(),
+          });
+        }
+      });
+      processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
+    } catch (err) {
+      console.error('Failed to reset categories:', err);
+    }
+  };
+
+  const handleIncludeOtherCategories = async () => {
+    if (!otherCategoryLogs || otherCategoryLogs.length === 0) return;
+    const catIdsToEnable = Array.from(new Set(otherCategoryLogs.map((l) => l.category_id)));
+    try {
+      await db.transaction('rw', db.categories, db.syncQueue, async () => {
+        for (const id of catIdsToEnable) {
+          await db.categories.update(id, { is_on_this_day: true });
+          await db.syncQueue.put({
+            id,
+            table: 'categories',
+            action: 'upsert',
+            timestamp: Date.now(),
+          });
+        }
+      });
+      processSyncQueue().catch((e) => console.warn('Background sync failed:', e));
+    } catch (err) {
+      console.error('Failed to include other categories:', err);
+    }
+  };
+
+  const handleTriggerTestNotification = async () => {
+    try {
+      setIsSendingTestNotification(true);
+      setTestNotificationFeedback(null);
+      if (pushPermission !== 'granted') {
+        await subscribeToWebPush();
+        setPushPermission('granted');
+      }
+      const res = await sendTestOnThisDayNotification();
+      setTestNotificationFeedback(res.message || 'Notification triggered! Check your device.');
+    } catch (err: any) {
+      setTestNotificationFeedback(err?.message || 'Failed to trigger notification. Check permissions.');
+    } finally {
+      setIsSendingTestNotification(false);
     }
   };
 
@@ -306,18 +422,77 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddRefle
           <p className="text-sm font-semibold">Retrieving past memories...</p>
         </div>
       ) : historicalLogs.length === 0 ? (
-        <div className="glass-panel rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-3">
+        <div className="glass-panel rounded-3xl p-8 sm:p-10 text-center flex flex-col items-center justify-center space-y-4">
           <div className="w-14 h-14 rounded-2xl bg-white/80 backdrop-blur-md flex items-center justify-center text-purple-500 shadow-xs border border-white/80">
             <Clock className="w-7 h-7" />
           </div>
-          <div>
+          <div className="max-w-md">
             <h3 className="text-base font-bold text-neutral-800">
               No memories found for {formatShortDate(targetDate)}
             </h3>
-            <p className="text-xs sm:text-sm text-neutral-500 max-w-sm mt-1">
+            <p className="text-xs sm:text-sm text-neutral-500 mt-1">
               There are no historical logs for this calendar day among your {eligibleCategories.length} selected &quot;On This Day&quot; categories.
             </p>
           </div>
+
+          {otherCategoryLogs && otherCategoryLogs.length > 0 ? (
+            <div className="w-full max-w-md p-4 rounded-2xl bg-purple-50/80 border border-purple-200/80 text-left space-y-3 mt-2">
+              <div className="flex items-center gap-2 text-purple-900 font-semibold text-xs sm:text-sm">
+                <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                <span>
+                  Found {otherCategoryLogs.length} {otherCategoryLogs.length === 1 ? 'memory' : 'memories'} on this calendar day in other categories:
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {otherCategoryNames.map((name) => (
+                  <span
+                    key={name}
+                    className="px-2.5 py-1 rounded-lg bg-white text-purple-800 text-xs font-semibold shadow-2xs border border-purple-200/60"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleIncludeOtherCategories}
+                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Include in On this day</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsConfigModalOpen(true)}
+                  className="px-3.5 py-2 bg-white hover:bg-purple-100/50 text-purple-700 text-xs font-semibold rounded-xl border border-purple-200 transition-all cursor-pointer"
+                >
+                  Choose categories
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfigModalOpen(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Choose categories</span>
+              </button>
+              {eligibleCategories.length < categories.length && (
+                <button
+                  type="button"
+                  onClick={handleSelectAllCategories}
+                  className="px-4 py-2 bg-white hover:bg-neutral-50 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200/80 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Include all ({categories.length}) categories</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -383,6 +558,29 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddRefle
               </button>
             </div>
 
+            {/* Quick Actions Bar */}
+            <div className="px-5 py-2.5 bg-neutral-50/80 border-b border-neutral-200/60 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAllCategories}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-purple-50 text-purple-700 text-xs font-semibold border border-purple-200 shadow-2xs transition-colors cursor-pointer"
+                >
+                  Select All ({categories.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetToDefaultCategories}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-neutral-100 text-neutral-700 text-xs font-semibold border border-neutral-200 shadow-2xs transition-colors cursor-pointer"
+                >
+                  Guruhari Darshan Only
+                </button>
+              </div>
+              <span className="text-xs text-neutral-600 font-medium">
+                {eligibleCategories.length} of {categories.length} active
+              </span>
+            </div>
+
             <div className="overflow-y-auto p-5 space-y-2.5 flex-1 no-scrollbar">
               {categories.map((cat) => {
                 const isSelected = isCategoryOnThisDay(cat);
@@ -429,15 +627,30 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddRefle
               })}
             </div>
 
-            <div className="p-4 border-t border-neutral-100 flex justify-end bg-white/40">
+            <div className="p-4 border-t border-neutral-100 flex items-center justify-between gap-3 bg-white/40 flex-wrap">
+              <button
+                type="button"
+                onClick={handleTriggerTestNotification}
+                disabled={isSendingTestNotification}
+                className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-xl border border-purple-200/60 transition-colors cursor-pointer"
+                title="Send test memory alert to this device"
+              >
+                <Bell className="w-3.5 h-3.5 text-purple-600" />
+                <span>{isSendingTestNotification ? 'Sending...' : 'Test Memory Alert'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsConfigModalOpen(false)}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs"
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer ml-auto"
               >
                 Done
               </button>
             </div>
+            {testNotificationFeedback && (
+              <div className="px-5 py-2 text-xs font-medium text-purple-800 bg-purple-50/90 border-t border-purple-200/50">
+                {testNotificationFeedback}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -311,6 +311,9 @@ function AuthenticatedApp() {
     const performFullSync = async () => {
       await pullFromCloud();    // 1. Pull down any new/deleted cloud data
       await processSyncQueue(); // 2. Push up any pending local changes
+      checkAndTriggerDailyOnThisDay().catch((err) =>
+        console.warn('On This Day check note:', err)
+      );
     };
 
     // Run immediately on load
@@ -326,8 +329,15 @@ function AuthenticatedApp() {
       }
     };
 
+    const handleSyncComplete = () => {
+      checkAndTriggerDailyOnThisDay().catch((err) =>
+        console.warn('On This Day sync check note:', err)
+      );
+    };
+
     window.addEventListener('online', performFullSync);
     window.addEventListener('focus', performFullSync);
+    window.addEventListener('activity_sync_completed', handleSyncComplete);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
     // Periodic check to flush unsynced local mutations (zero network egress when queue is empty)
@@ -339,6 +349,7 @@ function AuthenticatedApp() {
       cleanupRealtime();
       window.removeEventListener('online', performFullSync);
       window.removeEventListener('focus', performFullSync);
+      window.removeEventListener('activity_sync_completed', handleSyncComplete);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(queueInterval);
     };

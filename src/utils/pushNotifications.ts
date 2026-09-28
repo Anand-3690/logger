@@ -2,6 +2,7 @@
 import { db } from '../db';
 import { supabase } from '../supabaseClient';
 import { isCategoryOnThisDay } from '../types';
+import { getEffectiveLogDate } from './dayBoundary';
 
 export const FALLBACK_VAPID_PUBLIC_KEY =
   'BBM7QfZtYfyBHqQHjROalKr64BPK8VOajfsNEkI9dPkdYpnDoq5gfnOIVHnrrX5C_dJoBXENqsH7eFyY0iFpRdU';
@@ -382,8 +383,10 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
 
     const logs = await db.dailyLogs.toArray();
     const matched = logs.filter((log) => {
-      if (!log.log_date || !eligibleCatIds.has(log.category_id)) return false;
-      const cleanDate = String(log.log_date).split('T')[0];
+      if (!eligibleCatIds.has(log.category_id)) return false;
+      const effDate = getEffectiveLogDate(log);
+      if (!effDate) return false;
+      const cleanDate = effDate.split('T')[0];
       const parts = cleanDate.split('-');
       if (parts.length < 3) return false;
       const [y, m, d] = parts.map(Number);
@@ -473,7 +476,7 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
 /**
  * Automatically check and display On This Day notification when app opens (once per day)
  */
-export async function checkAndTriggerDailyOnThisDay(): Promise<void> {
+export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Promise<void> {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
 
@@ -483,8 +486,8 @@ export async function checkAndTriggerDailyOnThisDay(): Promise<void> {
   ).padStart(2, '0')}`;
   const lastAlertDate = localStorage.getItem(ON_THIS_DAY_ALERT_KEY);
 
-  // If already alerted today, skip to avoid spamming
-  if (lastAlertDate === todayStr) {
+  // If already alerted today, skip to avoid spamming unless force is specified
+  if (!force && lastAlertDate === todayStr) {
     return;
   }
 
@@ -502,8 +505,10 @@ export async function checkAndTriggerDailyOnThisDay(): Promise<void> {
 
     const logs = await db.dailyLogs.toArray();
     const matched = logs.filter((log) => {
-      if (!log.log_date || !eligibleCatIds.has(log.category_id)) return false;
-      const cleanDate = String(log.log_date).split('T')[0];
+      if (!eligibleCatIds.has(log.category_id)) return false;
+      const effDate = getEffectiveLogDate(log);
+      if (!effDate) return false;
+      const cleanDate = effDate.split('T')[0];
       const parts = cleanDate.split('-');
       if (parts.length < 3) return false;
       const [y, m, d] = parts.map(Number);

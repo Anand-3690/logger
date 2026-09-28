@@ -1,6 +1,6 @@
 import { db } from './db';
 import { supabase } from './supabaseClient';
-import { computeLogicalDate, getDayCutoffHour, getUserTimezone } from './utils/dayBoundary';
+import { computeLogicalDate, getDayCutoffHour, getUserTimezone, getEffectiveLogDate } from './utils/dayBoundary';
 
 let isSyncing = false;
 let isPulling = false;
@@ -348,15 +348,26 @@ export const pullFromCloud = async (force: boolean = false) => {
 
       const cutoffHour = getDayCutoffHour();
       const timeZone = getUserTimezone();
-      const logicalDate =
-        remoteLog.logical_date ||
-        local?.logical_date ||
-        computeLogicalDate(
+
+      let logicalDate = remoteLog.logical_date;
+      if (!logicalDate && local?.logical_date) {
+        // Validate local logical_date is not corrupted by an import timestamp
+        const effLocal = getEffectiveLogDate({
+          logical_date: local.logical_date,
+          log_date: remoteLog.log_date,
+        });
+        if (effLocal === local.logical_date) {
+          logicalDate = local.logical_date;
+        }
+      }
+      if (!logicalDate) {
+        logicalDate = computeLogicalDate(
           remoteLog.created_at || remoteLog.log_date,
           cutoffHour,
           timeZone,
           remoteLog.log_date
         );
+      }
 
       return {
         ...remoteLog,
@@ -390,6 +401,14 @@ export const pullFromCloud = async (force: boolean = false) => {
     console.log(
       `[SyncEngine] Cloud sync complete. Logs synced: ${normalizedLogs.length}, Logs deleted: ${logsToDeleteLocally.length}`
     );
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('activity_sync_completed', {
+          detail: { count: normalizedLogs.length },
+        })
+      );
+    }
   } catch (err) {
     console.error('[SyncEngine] Failed to pull data from cloud:', err);
   } finally {

@@ -144,12 +144,13 @@ export function computeLogicalDate(
     return fallbackLogDate || formatLocalDate(new Date());
   }
 
+  // If it's already a pure date "YYYY-MM-DD", return as-is
+  if (typeof createdAtOrDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(createdAtOrDate)) {
+    return createdAtOrDate;
+  }
+
   let d: Date;
   if (typeof createdAtOrDate === 'string') {
-    // If it's only a pure date "YYYY-MM-DD", return as-is or fallback
-    if (/^\d{4}-\d{2}-\d{2}$/.test(createdAtOrDate)) {
-      return createdAtOrDate;
-    }
     d = new Date(createdAtOrDate);
   } else {
     d = createdAtOrDate;
@@ -161,6 +162,32 @@ export function computeLogicalDate(
 
   const parts = getZonedTimeParts(d, timeZone);
   const calendarDate = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+
+  // If fallbackLogDate is provided, check if createdAtOrDate is contemporaneous with the intended log date.
+  // When logs are imported or backfilled into the cloud database, their created_at is the migration timestamp
+  // (e.g. 2026-09-07), which must NEVER overwrite historical activity dates (e.g. 2023-09-28).
+  if (fallbackLogDate && /^\d{4}-\d{2}-\d{2}$/.test(fallbackLogDate)) {
+    const [fY, fM, fD] = fallbackLogDate.split('-').map(Number);
+    const fallbackUtc = Date.UTC(fY, fM - 1, fD);
+    const createdUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
+    const diffDays = (createdUtc - fallbackUtc) / (24 * 60 * 60 * 1000);
+
+    // Legitimate late-night entry: created in early morning of (fallbackLogDate + 1 day) before cutoffHour
+    if (diffDays === 1 && cutoffHour > 0 && parts.hour < cutoffHour) {
+      return fallbackLogDate;
+    }
+
+    // Contemporaneous on same day:
+    if (diffDays === 0) {
+      if (cutoffHour > 0 && parts.hour < cutoffHour) {
+        return addDaysToDate(calendarDate, -1);
+      }
+      return calendarDate;
+    }
+
+    // Outside [-1, 1] range: timestamp is an import/sync metadata timestamp, preserve intended fallbackLogDate
+    return fallbackLogDate;
+  }
 
   // If cutoff is e.g. 4:00 AM, and hour is 0, 1, 2, or 3, it counts for previous day
   if (cutoffHour > 0 && parts.hour < cutoffHour) {
@@ -223,14 +250,41 @@ export function getLateNightChipLabel(
 }
 
 /**
- * Get effective logical date for any log record, falling back to log_date if logical_date is missing.
+ * Get effective logical date for any log record, falling back to log_date if logical_date is missing
+ * or corrupted by an import timestamp.
  */
 export function getEffectiveLogDate(log: { logical_date?: string | null; log_date: string }): string {
-  return log.logical_date || log.log_date;
+  if (!log) return '';
+  if (!log.logical_date) return log.log_date;
+
+  // Validation: logical_date must be a valid YYYY-MM-DD
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(log.logical_date)) {
+    return log.log_date;
+  }
+
+  // Safety check: logical_date can only ever differ from log_date by at most 1 calendar day.
+  // If corrupted (e.g. created_at from import set logical_date to a different month or year),
+  // immediately fall back to log_date.
+  try {
+    const [y1, m1, d1] = log.log_date.split('-').map(Number);
+    const [y2, m2, d2] = log.logical_date.split('-').map(Number);
+    if (y1 !== y2 || Math.abs(m1 - m2) > 1) {
+      return log.log_date;
+    }
+    const t1 = Date.UTC(y1, m1 - 1, d1);
+    const t2 = Date.UTC(y2, m2 - 1, d2);
+    const diffDays = Math.abs((t2 - t1) / (24 * 60 * 60 * 1000));
+    if (diffDays > 1.5) {
+      return log.log_date;
+    }
+    return log.logical_date;
+  } catch {
+    return log.log_date;
+  }
 }
 
 /**
- * Safe, backward-compatible Dexie migration to backfill logical_date for all existing records.
+ * Safe, backward-compatible Dexie migration to backfill and repair logical_date for all existing records.
  * Original timestamps and log_date fields are strictly preserved.
  */
 export async function backfillExistingLogs(db: TrackerDB): Promise<number> {
@@ -240,12 +294,19 @@ export async function backfillExistingLogs(db: TrackerDB): Promise<number> {
 
   try {
     const logs = await db.dailyLogs.toArray();
-    const updates: Partial<DailyLog>[] = [];
+    const updates: { id: string; logical_date: string }[] = [];
 
     for (const log of logs) {
-      if (!log.logical_date) {
-        const computed = computeLogicalDate(log.created_at || log.log_date, cutoffHour, timeZone, log.log_date);
-        updates.push({ id: log.id, logical_date: computed });
+      const eff = getEffectiveLogDate(log);
+      // If logical_date is missing OR if current logical_date was corrupted
+      if (!log.logical_date || log.logical_date !== eff) {
+        const correctLogicalDate = computeLogicalDate(
+          log.created_at || log.log_date,
+          cutoffHour,
+          timeZone,
+          log.log_date
+        );
+        updates.push({ id: log.id, logical_date: correctLogicalDate });
       }
     }
 
@@ -258,7 +319,7 @@ export async function backfillExistingLogs(db: TrackerDB): Promise<number> {
           }
         }
       });
-      console.log(`[DayBoundary] Successfully backfilled logical_date on ${updatedCount} logs.`);
+      console.log(`[DayBoundary] Successfully repaired/backfilled logical_date on ${updatedCount} logs.`);
     }
   } catch (err) {
     console.warn('[DayBoundary] Error while backfilling logical_date:', err);
