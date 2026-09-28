@@ -142,6 +142,8 @@ export function generateNativeVectorPDF(
     activeDaysCount: number;
     daysInMonth: number;
     photoCount: number;
+    longestStreak?: number;
+    consistencyDelta?: number | null;
     topCategoryName: string;
     categories: Array<{ name: string; count: number; percentage: number }>;
     logs: Array<{ date: string; categoryName: string; notes?: string | null }>;
@@ -166,11 +168,15 @@ export function generateNativeVectorPDF(
   y += 36;
 
   const cardWidth = (pageWidth - margin * 2 - 9) / 4;
+  const streakVal = reportData.longestStreak !== undefined ? `${reportData.longestStreak} days` : 'N/A';
+  const consistencyDeltaStr = reportData.consistencyDelta !== undefined && reportData.consistencyDelta !== null
+    ? ` (${reportData.consistencyDelta >= 0 ? '+' : ''}${reportData.consistencyDelta}% vs last mo)`
+    : '';
   const stats = [
-    { label: 'TOTAL LOGS', val: `${reportData.totalLogs}`, sub: 'activities recorded' },
-    { label: 'ACTIVE DAYS', val: `${reportData.activeDaysCount}/${reportData.daysInMonth}`, sub: `${Math.round((reportData.activeDaysCount / (reportData.daysInMonth || 1)) * 100)}% consistency` },
+    { label: 'TOTAL LOGS', val: `${reportData.totalLogs}`, sub: reportData.photoCount > 0 ? `${reportData.photoCount} photos` : 'activities recorded' },
+    { label: 'ACTIVE DAYS', val: `${reportData.activeDaysCount}/${reportData.daysInMonth}`, sub: `${Math.round((reportData.activeDaysCount / (reportData.daysInMonth || 1)) * 100)}%${consistencyDeltaStr}` },
     { label: 'TOP FOCUS', val: reportData.topCategoryName.slice(0, 14), sub: 'primary habit' },
-    { label: 'PHOTOS', val: `${reportData.photoCount}`, sub: 'visual memories' },
+    { label: 'LONGEST STREAK', val: streakVal, sub: 'consecutive days' },
   ];
 
   stats.forEach((st, i) => {

@@ -18,6 +18,11 @@ import {
   FileText,
   CheckCircle2,
   Eye,
+  Flame,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import type { PdfExportResult } from '../utils/downloadPdf';
 import { PdfPreviewModal } from './PdfPreviewModal';
@@ -139,17 +144,77 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       }
     });
 
+    // Calculate longest consecutive streak of active days in this month
+    let currentStreak = 0;
+    let longestStreak = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (dailyCounts[day] > 0) {
+        currentStreak++;
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+      } else {
+        currentStreak = 0;
+      }
+    }
+
+    const consistencyRate = Math.round((activeDaysCount / (daysInMonth || 1)) * 100);
+
+    // Calculate "vs last month" consistency difference
+    let consistencyDelta: number | null = null;
+    const prevDate = new Date(y, m - 2, 1);
+    const prevY = prevDate.getFullYear();
+    const prevM = String(prevDate.getMonth() + 1).padStart(2, '0');
+    const prevMonthKey = `${prevY}-${prevM}`;
+
+    const prevMonthLogs = logs.filter(
+      (l) => getEffectiveLogDate(l).startsWith(prevMonthKey) && l.status !== 'absent'
+    );
+
+    if (prevMonthLogs.length > 0) {
+      const prevActiveDays = new Set(prevMonthLogs.map((l) => getEffectiveLogDate(l))).size;
+      const prevDaysInMonth = new Date(prevY, prevDate.getMonth() + 1, 0).getDate();
+      const prevConsistency = Math.round((prevActiveDays / (prevDaysInMonth || 1)) * 100);
+      consistencyDelta = consistencyRate - prevConsistency;
+    }
+
+    const maxCategoryCount = Math.max(...categoryBreakdown.map((item) => item.count), 1);
+
     return {
       totalLogs,
       activeDaysCount,
       daysInMonth,
+      consistencyRate,
+      consistencyDelta,
+      longestStreak,
       photoCount,
       topCategory,
       categoryBreakdown,
+      maxCategoryCount,
       dailyCounts,
       filteredLogs,
     };
   }, [logs, categories, selectedMonth]);
+
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
+  const [selectedDayFilter, setSelectedDayFilter] = useState<number | null>(null);
+  const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
+
+  const displayedLogs = useMemo(() => {
+    return stats.filteredLogs.filter((log) => {
+      if (selectedCategoryFilter && log.category_id !== selectedCategoryFilter) {
+        return false;
+      }
+      if (selectedDayFilter !== null) {
+        const effDate = getEffectiveLogDate(log);
+        const dayNum = parseInt(effDate.split('-')[2], 10);
+        if (dayNum !== selectedDayFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [stats.filteredLogs, selectedCategoryFilter, selectedDayFilter]);
 
   const [exportError, setExportError] = useState<string | null>(null);
   const [pdfResult, setPdfResult] = useState<PdfExportResult | null>(null);
@@ -167,6 +232,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         activeDaysCount: stats.activeDaysCount,
         daysInMonth: stats.daysInMonth,
         photoCount: stats.photoCount,
+        longestStreak: stats.longestStreak,
+        consistencyDelta: stats.consistencyDelta,
         topCategoryName: stats.topCategory?.name || 'None',
         categories: stats.categoryBreakdown.map((item) => ({
           name: item.category.name,
@@ -339,8 +406,15 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </div>
         </div>
 
-        {/* 4 Summary Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {/* 4-5 Summary Stat Cards */}
+        <div
+          className={`grid gap-3 sm:gap-4 ${
+            stats.photoCount > 0
+              ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+              : 'grid-cols-2 sm:grid-cols-4'
+          }`}
+        >
+          {/* 1. Total Logs */}
           <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Total Logs</span>
@@ -354,6 +428,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
+          {/* 2. Active Days + vs last month */}
           <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Active Days</span>
@@ -362,11 +437,30 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <div className="text-2xl sm:text-3xl font-black text-neutral-900">
               {stats.activeDaysCount} <span className="text-sm font-normal text-neutral-400">/ {stats.daysInMonth}</span>
             </div>
-            <span className="text-[11px] text-neutral-500 font-medium">
-              {Math.round((stats.activeDaysCount / (stats.daysInMonth || 1)) * 100)}% consistency rate
-            </span>
+            <div className="text-[11px] text-neutral-500 font-medium flex items-center flex-wrap gap-1">
+              <span>{stats.consistencyRate}% consistency</span>
+              {stats.consistencyDelta !== null && (
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                    stats.consistencyDelta > 0
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : stats.consistencyDelta < 0
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-neutral-100 text-neutral-600'
+                  }`}
+                  title={`${stats.consistencyRate}% vs previous month`}
+                >
+                  {stats.consistencyDelta > 0
+                    ? `↑ +${stats.consistencyDelta} pts`
+                    : stats.consistencyDelta < 0
+                    ? `↓ ${stats.consistencyDelta} pts`
+                    : 'even'}
+                </span>
+              )}
+            </div>
           </div>
 
+          {/* 3. Top Focus */}
           <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider">Top Focus</span>
@@ -380,18 +474,35 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
+          {/* 4. Longest Streak */}
           <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-neutral-500 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-wider">Photos Logged</span>
-              <ImageIcon className="w-4 h-4 text-purple-600" />
+              <span className="text-xs font-semibold uppercase tracking-wider">Longest Streak</span>
+              <Flame className="w-4 h-4 text-orange-500" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-neutral-900">
-              {stats.photoCount}
+              {stats.longestStreak} <span className="text-sm font-normal text-neutral-400">{stats.longestStreak === 1 ? 'day' : 'days'}</span>
             </div>
             <span className="text-[11px] text-neutral-500 font-medium">
-              visual memories
+              consecutive active days
             </span>
           </div>
+
+          {/* 5. Photos Logged (Only if photoCount > 0) */}
+          {stats.photoCount > 0 && (
+            <div className="glass-panel-subtle rounded-2xl p-4 flex flex-col justify-between">
+              <div className="flex items-center justify-between text-neutral-500 mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wider">Photos Logged</span>
+                <ImageIcon className="w-4 h-4 text-purple-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-neutral-900">
+                {stats.photoCount}
+              </div>
+              <span className="text-[11px] text-neutral-500 font-medium">
+                visual memories
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Category Breakdown & Visual Bar Chart */}
@@ -401,56 +512,153 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <TrendingUp className="w-4 h-4 text-blue-600" />
               Category Aggregate Breakdown
             </h3>
-            <span className="text-xs font-medium text-neutral-500">
-              {stats.totalLogs} total entries
-            </span>
+            <div className="flex items-center gap-2">
+              {selectedCategoryFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter(null)}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                  Clear filter
+                </button>
+              )}
+              <span className="text-xs font-medium text-neutral-500">
+                {stats.totalLogs} total entries
+              </span>
+            </div>
           </div>
 
-          {/* Bar Chart Representation */}
-          <div className="space-y-3 pt-1">
-            {stats.categoryBreakdown.map((item) => {
+          {/* Bar Chart Representation with Relative Widths & Tappable Filter */}
+          <div className="space-y-2 pt-1">
+            {(showAllCategories
+              ? stats.categoryBreakdown
+              : stats.categoryBreakdown.filter((c) => c.count > 0)
+            ).map((item) => {
               const cat = item.category;
-              return (
-                <div key={cat.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs sm:text-sm">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-5 h-5 rounded-md flex items-center justify-center text-white shrink-0"
-                        style={{ backgroundColor: cat.color_code }}
-                      >
-                        <CategoryIcon name={cat.icon} className="w-3 h-3 text-white" />
-                      </div>
-                      <span className="font-bold text-neutral-800">{cat.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 font-mono">
-                      <span className="font-semibold text-neutral-900">{item.count} logs</span>
-                      <span className="text-xs text-neutral-400">({item.percentage}%)</span>
-                    </div>
-                  </div>
+              const isSelected = selectedCategoryFilter === cat.id;
+              // Scale relative to top category (100% width = top category)
+              const relativeWidth =
+                stats.maxCategoryCount > 0
+                  ? (item.count / stats.maxCategoryCount) * 100
+                  : 0;
 
-                  {/* Visual progress bar */}
-                  <div className="w-full h-3 bg-neutral-200/80 rounded-full overflow-hidden flex">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.max(item.percentage, item.count > 0 ? 4 : 0)}%`,
-                        backgroundColor: cat.color_code,
-                      }}
-                    />
+              return (
+                <div
+                  key={cat.id}
+                  onClick={() =>
+                    setSelectedCategoryFilter((prev) => (prev === cat.id ? null : cat.id))
+                  }
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedCategoryFilter((prev) => (prev === cat.id ? null : cat.id));
+                    }
+                  }}
+                  title={
+                    isSelected
+                      ? 'Click to show all categories'
+                      : `Click to filter logs by ${cat.name}`
+                  }
+                  className={`p-2.5 rounded-xl transition-all cursor-pointer border ${
+                    isSelected
+                      ? 'bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20 shadow-2xs'
+                      : 'border-transparent hover:bg-neutral-100/70 hover:border-neutral-200/80'
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs sm:text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-white shrink-0 shadow-2xs"
+                          style={{ backgroundColor: cat.color_code }}
+                        >
+                          <CategoryIcon name={cat.icon} className="w-3 h-3 text-white" />
+                        </div>
+                        <span className="font-bold text-neutral-800">{cat.name}</span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-100/80 px-1.5 py-0.2 rounded-md">
+                            Active filter
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="font-semibold text-neutral-900">
+                          {item.count} {item.count === 1 ? 'log' : 'logs'}
+                        </span>
+                        <span className="text-xs text-neutral-400">({item.percentage}%)</span>
+                      </div>
+                    </div>
+
+                    {/* Visual progress bar scaled relative to top category */}
+                    <div className="w-full h-3 bg-neutral-200/80 rounded-full overflow-hidden flex">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${item.count > 0 ? Math.max(relativeWidth, 5) : 0}%`,
+                          backgroundColor: cat.color_code,
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               );
             })}
+
+            {/* Zero-count categories toggle */}
+            {stats.categoryBreakdown.some((c) => c.count === 0) && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAllCategories(!showAllCategories)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition-colors cursor-pointer"
+                >
+                  {showAllCategories ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Hide {stats.categoryBreakdown.filter((c) => c.count === 0).length} inactive categories</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>Show {stats.categoryBreakdown.filter((c) => c.count === 0).length} inactive categories</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Daily Distribution Rhythm Grid across the Month */}
-        <div className="bg-neutral-50/70 rounded-2xl p-4 sm:p-5 border border-neutral-200/80">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-600 mb-3">
-            Daily Rhythm & Consistency ({monthName})
-          </h3>
-          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
+        {/* Month Heatmap Calendar replacing Daily Rhythm */}
+        <div className="bg-neutral-50/70 rounded-2xl p-4 sm:p-5 border border-neutral-200/80 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                Monthly Activity Heatmap ({monthName})
+              </h3>
+              <p className="text-[11px] text-neutral-500 font-medium mt-0.5">
+                {stats.activeDaysCount} of {stats.daysInMonth} days logged ({stats.consistencyRate}% active)
+              </p>
+            </div>
+            {selectedDayFilter !== null && (
+              <button
+                type="button"
+                onClick={() => setSelectedDayFilter(null)}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+                Clear day filter
+              </button>
+            )}
+          </div>
+
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 pt-1">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, idx) => (
               <div key={idx} className="text-center text-[10px] font-bold text-neutral-400 uppercase py-0.5">
                 {d}
               </div>
@@ -458,51 +666,102 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
             {/* Empty slots for first day offset */}
             {Array.from({ length: monthDate.getDay() }).map((_, i) => (
-              <div key={`empty-${i}`} className="h-9 rounded-lg opacity-20 bg-neutral-100" />
+              <div key={`empty-${i}`} className="h-10 rounded-xl opacity-30 bg-neutral-200/40" />
             ))}
 
-            {/* Days of month */}
+            {/* Days of month with activity level shading */}
             {Array.from({ length: stats.daysInMonth }).map((_, i) => {
               const dayNum = i + 1;
               const count = stats.dailyCounts[dayNum] || 0;
-              let bgStyle = 'bg-white border-neutral-200 text-neutral-700';
-              if (count === 1) bgStyle = 'bg-blue-100 border-blue-200 text-blue-900 font-bold';
-              if (count === 2) bgStyle = 'bg-blue-300 border-blue-400 text-blue-950 font-bold';
-              if (count >= 3) bgStyle = 'bg-blue-600 border-blue-700 text-white font-bold';
+              const isSelectedDay = selectedDayFilter === dayNum;
+
+              let heatClass = 'bg-white border-neutral-200/70 text-neutral-500 hover:border-neutral-300';
+              if (count === 1) {
+                heatClass = 'bg-emerald-100 border-emerald-300 text-emerald-900 font-bold hover:bg-emerald-200';
+              } else if (count >= 2 && count <= 3) {
+                heatClass = 'bg-emerald-300 border-emerald-400 text-emerald-950 font-bold hover:bg-emerald-400';
+              } else if (count >= 4) {
+                heatClass = 'bg-emerald-600 border-emerald-700 text-white font-black shadow-xs hover:bg-emerald-700';
+              }
+
+              const formattedDayTitle = `${monthName.split(' ')[0]} ${dayNum}: ${count} ${
+                count === 1 ? 'activity' : 'activities'
+              }`;
 
               return (
-                <div
+                <button
                   key={dayNum}
-                  title={`Day ${dayNum}: ${count} activities`}
-                  className={`h-9 rounded-lg border flex flex-col items-center justify-center text-xs transition-colors relative ${bgStyle}`}
+                  type="button"
+                  onClick={() => setSelectedDayFilter((prev) => (prev === dayNum ? null : dayNum))}
+                  title={formattedDayTitle}
+                  className={`h-10 rounded-xl border flex flex-col items-center justify-center text-xs transition-all relative cursor-pointer ${heatClass} ${
+                    isSelectedDay ? 'ring-2 ring-blue-600 ring-offset-1 scale-105 z-10 shadow-sm' : ''
+                  }`}
                 >
-                  <span>{dayNum}</span>
+                  <span className="leading-tight">{dayNum}</span>
                   {count > 0 && (
-                    <span className="text-[9px] leading-none opacity-85">
+                    <span className="text-[9px] leading-none opacity-90 mt-0.5">
                       {count}
                     </span>
                   )}
-                </div>
+                </button>
               );
             })}
+          </div>
+
+          {/* Heatmap Legend */}
+          <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-2 border-t border-neutral-200/60">
+            <span className="font-medium">Activity levels:</span>
+            <div className="flex items-center gap-1.5 font-medium">
+              <span>Less</span>
+              <span className="w-3.5 h-3.5 rounded-sm bg-white border border-neutral-200 inline-block" title="0 logs" />
+              <span className="w-3.5 h-3.5 rounded-sm bg-emerald-100 border border-emerald-300 inline-block" title="1 log" />
+              <span className="w-3.5 h-3.5 rounded-sm bg-emerald-300 border border-emerald-400 inline-block" title="2-3 logs" />
+              <span className="w-3.5 h-3.5 rounded-sm bg-emerald-600 border border-emerald-700 inline-block" title="4+ logs" />
+              <span>More</span>
+            </div>
           </div>
         </div>
 
         {/* Itemized Activity Log List for this Month */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-600">
-              Itemized Activity Entries ({stats.filteredLogs.length})
+              Itemized Activity Entries ({displayedLogs.length} of {stats.filteredLogs.length})
             </h3>
+            {(selectedCategoryFilter || selectedDayFilter !== null) && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-blue-700 font-medium flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                  <Filter className="w-3 h-3" />
+                  Filtered by{' '}
+                  {selectedCategoryFilter &&
+                    categories.find((c) => c.id === selectedCategoryFilter)?.name}
+                  {selectedCategoryFilter && selectedDayFilter !== null && ' • '}
+                  {selectedDayFilter !== null && `Day ${selectedDayFilter}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategoryFilter(null);
+                    setSelectedDayFilter(null);
+                  }}
+                  className="text-xs font-semibold text-neutral-500 hover:text-neutral-800 cursor-pointer"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
           </div>
 
-          {stats.filteredLogs.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400 text-sm italic">
-              No entries logged in {monthName}.
+          {displayedLogs.length === 0 ? (
+            <div className="text-center py-8 text-neutral-400 text-sm italic bg-neutral-50/50 rounded-2xl border border-neutral-200">
+              {stats.filteredLogs.length === 0
+                ? `No entries logged in ${monthName}.`
+                : 'No entries match the selected filters.'}
             </div>
           ) : (
             <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-2xl overflow-hidden bg-white">
-              {stats.filteredLogs.map((log) => (
+              {displayedLogs.map((log) => (
                 <div key={log.id} className="p-3.5 sm:p-4 flex items-start justify-between gap-3 text-xs sm:text-sm">
                   <div className="flex items-start gap-3">
                     <div
