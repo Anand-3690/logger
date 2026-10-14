@@ -160,7 +160,8 @@ export default async function handler(req: any, res: any) {
       body,
       icon: '/assets/icon-192.png',
       badge: '/assets/icon-192.png',
-      data: { url: '/on-this-day' },
+      tag: `on-this-day-${formattedTarget}`,
+      data: { url: '/on-this-day', tag: `on-this-day-${formattedTarget}` },
       actions: [{ action: 'view', title: 'Open Memories' }],
     });
 
@@ -174,7 +175,10 @@ export default async function handler(req: any, res: any) {
             ? JSON.parse(sub.subscription_json)
             : sub.subscription_json;
 
-        await webpush.sendNotification(pushSub, payload);
+        await webpush.sendNotification(pushSub, payload, {
+          TTL: 86400,
+          urgency: 'high',
+        });
         sentCount++;
       } catch (err: any) {
         console.warn('[Push Notification Error]:', err.statusCode || err.message);

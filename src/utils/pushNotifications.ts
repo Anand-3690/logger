@@ -175,7 +175,7 @@ export async function subscribeToWebPush(authToken?: string | null): Promise<Pus
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey,
+          applicationServerKey: convertedVapidKey as unknown as BufferSource,
         });
       }
 
@@ -471,6 +471,72 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
         ? `On This Day alert triggered! Found ${memoriesCount} memories for today (${categoryNames.join(', ')}). Check your device notifications.`
         : `On This Day test notification shown on your device!`,
   };
+}
+
+/**
+ * Trigger immediate test push notification for Resolutions
+ */
+export async function sendTestResolutionNotification(authToken?: string | null): Promise<any> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    throw new Error('Notifications are not supported in this browser.');
+  }
+
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      throw new Error('Please allow notification permissions first.');
+    }
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Try local service worker notification first
+  let displayedLocally = false;
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification('🎯 Resolution: Morning Meditation', {
+        body: 'Time for your daily resolution: "Morning Meditation (15m)". Did you accomplish it today?',
+        icon: '/assets/icon-192.png',
+        badge: '/assets/icon-192.png',
+        tag: `test-resolution-${Date.now()}`,
+        renotify: true,
+        actions: [
+          { action: 'present', title: 'Completed ✅' },
+          { action: 'absent', title: 'Not Today' },
+        ],
+        data: {
+          url: '/resolutions',
+          log_date: todayStr,
+        },
+      } as any);
+      displayedLocally = true;
+    } catch (swErr) {
+      console.warn('[PWA] SW resolution test notification note:', swErr);
+    }
+  }
+
+  if (!displayedLocally) {
+    try {
+      new Notification('🎯 Resolution: Morning Meditation', {
+        body: 'Time for your daily resolution: "Morning Meditation (15m)". Check in now!',
+        icon: '/assets/icon-192.png',
+      });
+      displayedLocally = true;
+    } catch (nErr) {
+      console.warn('[PWA] Direct Notification API error:', nErr);
+    }
+  }
+
+  // Also trigger server push if reachable
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    await fetch('/api/notifications/test?type=resolution', { method: 'POST', headers }).catch(() => {});
+    await fetch('/api/cron/notify?force=true', { method: 'POST', headers }).catch(() => {});
+  } catch {}
+
+  return { success: true, message: 'Resolution test notification sent to your device! 🎯' };
 }
 
 /**

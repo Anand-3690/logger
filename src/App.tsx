@@ -12,6 +12,7 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
+import { ResolutionsView } from './components/ResolutionsView';
 import { resolveMigratedIcon } from './components/CategoryIcon';
 import {
   registerServiceWorker,
@@ -45,8 +46,14 @@ function AuthenticatedApp() {
   const { session, signOut } = useAuth();
   
   // Navigation & View State
-  const [currentView, setCurrentView] = useState<'dashboard' | 'reports' | 'on-this-day'>(
-    window.location.pathname.includes('/on-this-day') ? 'on-this-day' : 'dashboard'
+  const [currentView, setCurrentView] = useState<'dashboard' | 'reports' | 'on-this-day' | 'resolutions'>(
+    window.location.pathname.includes('/resolutions')
+      ? 'resolutions'
+      : window.location.pathname.includes('/on-this-day')
+      ? 'on-this-day'
+      : window.location.pathname.includes('/reports')
+      ? 'reports'
+      : 'dashboard'
   );
   const [, setForceRender] = useState(0);
 
@@ -243,8 +250,39 @@ function AuthenticatedApp() {
       })
       .catch((err) => console.warn('Service worker registration failed:', err));
 
+    // Ensure 'Resolution' category exists locally in Dexie database
+    db.categories
+      .where('name')
+      .equalsIgnoreCase('Resolution')
+      .first()
+      .then(async (cat) => {
+        if (!cat) {
+          const resCatId = crypto.randomUUID ? crypto.randomUUID() : `cat_${Date.now()}`;
+          await db.categories.put({
+            id: resCatId,
+            name: 'Resolution',
+            color_code: '#10b981',
+            icon: 'Target',
+            reminder_time: '09:00',
+            is_active: true,
+            is_on_this_day: false,
+            sort_order: -1,
+          });
+          await db.syncQueue.put({
+            id: resCatId,
+            table: 'categories',
+            action: 'upsert',
+            timestamp: Date.now(),
+          });
+          processSyncQueue().catch(() => {});
+        }
+      })
+      .catch((err) => console.warn('Resolution category seed note:', err));
+
     const handlePopState = () => {
-      if (window.location.pathname.includes('/on-this-day')) {
+      if (window.location.pathname.includes('/resolutions')) {
+        setCurrentView('resolutions');
+      } else if (window.location.pathname.includes('/on-this-day')) {
         setCurrentView('on-this-day');
       } else if (window.location.pathname.includes('/reports')) {
         setCurrentView('reports');
@@ -257,7 +295,9 @@ function AuthenticatedApp() {
     const handleMessage = async (event: MessageEvent) => {
       if (event.data && event.data.type === 'NAVIGATE' && event.data.url) {
         window.history.pushState(null, '', event.data.url);
-        if (event.data.url.includes('/on-this-day')) {
+        if (event.data.url.includes('/resolutions')) {
+          setCurrentView('resolutions');
+        } else if (event.data.url.includes('/on-this-day')) {
           setCurrentView('on-this-day');
         } else if (event.data.url.includes('/reports')) {
           setCurrentView('reports');
@@ -699,7 +739,9 @@ function AuthenticatedApp() {
         route={currentView}
         onNavigate={(route) => {
           setCurrentView(route);
-          if (route === 'on-this-day') {
+          if (route === 'resolutions') {
+            window.history.pushState(null, '', '/resolutions');
+          } else if (route === 'on-this-day') {
             window.history.pushState(null, '', '/on-this-day');
           } else if (route === 'reports') {
             window.history.pushState(null, '', '/reports');
@@ -732,6 +774,8 @@ function AuthenticatedApp() {
             }}
             onAddReflection={handleAddReflection}
           />
+        ) : currentView === 'resolutions' ? (
+          <ResolutionsView onToast={showToast} />
         ) : currentView === 'dashboard' ? (
           <div className="space-y-4">
             <DaySelector

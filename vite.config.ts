@@ -14,6 +14,35 @@ export default defineConfig(() => {
       {
         name: 'api-dev-server-middleware',
         configureServer(server) {
+          // Continuous in-process background scheduler for Google AI Studio & self-hosted runtimes
+          let lastTickMinute = '';
+          const tickScheduler = async () => {
+            try {
+              const now = new Date();
+              const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+              const currentMinuteStr = `${istDate.getUTCHours()}:${istDate.getUTCMinutes()}`;
+              if (currentMinuteStr === lastTickMinute) return;
+              lastTickMinute = currentMinuteStr;
+
+              const notifyModule = await import('./api/cron/notify.ts');
+              if (notifyModule && notifyModule.default) {
+                const mockReq = { method: 'POST', query: {}, body: {} };
+                const mockRes = {
+                  setHeader: () => mockRes,
+                  status: () => mockRes,
+                  json: () => mockRes,
+                  end: () => mockRes,
+                };
+                await notifyModule.default(mockReq, mockRes);
+              }
+            } catch {
+              // Ignore background cron tick exceptions
+            }
+          };
+
+          const cronTimer = setInterval(tickScheduler, 30000);
+          server.httpServer?.on('close', () => clearInterval(cronTimer));
+
           server.middlewares.use(async (req, res, next) => {
             if (!req.url?.startsWith('/api/')) return next();
             const host = req.headers.host || 'localhost:3000';

@@ -1,10 +1,10 @@
 import React from 'react';
-import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText, History, Search } from 'lucide-react';
+import { Calendar, BarChart3, Database, Sparkles, Plus, Tag, Lock, FileText, History, Search, Target } from 'lucide-react';
 import { NotificationToggle } from './NotificationToggle';
 
 interface HeaderProps {
-  currentView: 'dashboard' | 'reports'| 'on-this-day'; // Added 'on-this-day';
-  onViewChange: (view: 'dashboard' | 'reports' | 'on-this-day') => void;
+  currentView: 'dashboard' | 'reports' | 'on-this-day' | 'resolutions';
+  onViewChange: (view: 'dashboard' | 'reports' | 'on-this-day' | 'resolutions') => void;
   onOpenNewLog: () => void;
   onOpenSchema: () => void;
   onOpenCategories?: () => void;
@@ -90,6 +90,21 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <BarChart3 className="w-3.5 h-3.5" />
               <span>Reports</span>
+            </button>
+            <button
+              id="view-tab-resolutions"
+              onClick={() => {
+                onViewChange('resolutions');
+                window.history.pushState(null, '', '/resolutions');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                currentView === 'resolutions'
+                  ? 'bg-white/90 text-emerald-700 shadow-xs font-bold border border-white/90'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/40'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>Resolutions</span>
             </button>
             <button
               id="view-tab-on-this-day"

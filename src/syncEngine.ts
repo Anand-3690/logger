@@ -47,7 +47,12 @@ async function adaptiveUpsert(
     }
 
     // Check common optional columns if mentioned in error
-    const candidateColumns = ['photo_url', 'photo_data', 'photo_storage_path', 'updated_at', 'reminder_time', 'notes', 'status', 'icon', 'color_code', 'is_active', 'is_on_this_day'];
+    const candidateColumns = [
+      'photo_url', 'photo_data', 'photo_storage_path', 'updated_at', 'reminder_time',
+      'notes', 'status', 'icon', 'color_code', 'is_active', 'is_on_this_day',
+      'title', 'description', 'interval_type', 'days_of_week', 'day_of_month',
+      'month_of_year', 'custom_interval_days', 'start_date', 'last_completed_at'
+    ];
     for (const col of candidateColumns) {
       if (msg.toLowerCase().includes(col) && payload[col] !== undefined) {
         delete payload[col];
@@ -205,6 +210,32 @@ export const processSyncQueue = async () => {
 
               if (upsertErr) throw upsertErr;
             }
+          } else if (item.table === 'resolutions') {
+            const record = await db.resolutions.get(item.id);
+            if (record) {
+              const { error: resErr } = await adaptiveUpsert(
+                'resolutions',
+                {
+                  id: record.id,
+                  category_id: record.category_id || null,
+                  title: record.title,
+                  description: record.description || null,
+                  interval_type: record.interval_type || 'daily',
+                  reminder_time: record.reminder_time || '08:00',
+                  days_of_week: record.days_of_week || null,
+                  day_of_month: record.day_of_month || null,
+                  month_of_year: record.month_of_year || null,
+                  custom_interval_days: record.custom_interval_days || null,
+                  start_date: record.start_date || new Date().toISOString().split('T')[0],
+                  is_active: record.is_active ?? true,
+                  last_completed_at: record.last_completed_at || null,
+                  created_at: record.created_at || new Date().toISOString(),
+                  updated_at: record.updated_at || new Date().toISOString(),
+                },
+                { onConflict: 'id' }
+              );
+              if (resErr) throw resErr;
+            }
           }
         } else if (item.action === 'delete') {
           // Process explicit deletion from Supabase
@@ -226,6 +257,16 @@ export const processSyncQueue = async () => {
 
             if (error) {
               console.warn('[SyncEngine] Supabase delete error for categories:', error);
+              throw error;
+            }
+          } else if (item.table === 'resolutions') {
+            const { error } = await supabase
+              .from('resolutions')
+              .delete()
+              .eq('id', item.id);
+
+            if (error) {
+              console.warn('[SyncEngine] Supabase delete error for resolutions:', error);
               throw error;
             }
           }
@@ -398,6 +439,36 @@ export const pullFromCloud = async (force: boolean = false) => {
       }
     });
 
+    // Reconcile Resolutions
+    try {
+      const { data: remoteResolutions, error: resFetchErr } = await supabase
+        .from('resolutions')
+        .select('*');
+      if (!resFetchErr && remoteResolutions) {
+        const pendingResQueue = pendingQueue.filter((q) => q.table === 'resolutions');
+        const pendingDeleteResIds = new Set(
+          pendingResQueue.filter((q) => q.action === 'delete').map((q) => q.id)
+        );
+        const pendingUpsertResIds = new Set(
+          pendingResQueue.filter((q) => q.action === 'upsert').map((q) => q.id)
+        );
+        const existingLocalRes = await db.resolutions.toArray();
+        const remoteResIds = new Set(remoteResolutions.map((r) => r.id));
+        const resToDeleteLocally = existingLocalRes
+          .filter((r) => (!remoteResIds.has(r.id) && !pendingUpsertResIds.has(r.id)) || pendingDeleteResIds.has(r.id))
+          .map((r) => r.id);
+        if (resToDeleteLocally.length > 0) {
+          await db.resolutions.bulkDelete(resToDeleteLocally);
+        }
+        const validRemoteRes = remoteResolutions.filter((r) => !pendingDeleteResIds.has(r.id));
+        if (validRemoteRes.length > 0) {
+          await db.resolutions.bulkPut(validRemoteRes);
+        }
+      }
+    } catch (resErr) {
+      console.warn('[SyncEngine] Resolutions pull note:', resErr);
+    }
+
     console.log(
       `[SyncEngine] Cloud sync complete. Logs synced: ${normalizedLogs.length}, Logs deleted: ${logsToDeleteLocally.length}`
     );
@@ -473,6 +544,20 @@ export const setupRealtimeSync = () => {
           await db.categories.delete(payload.old.id);
         } else if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new?.id) {
           await db.categories.put(payload.new as any);
+        } else {
+          pullFromCloud(true).catch(console.warn);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'resolutions' },
+      async (payload) => {
+        console.log('[Realtime] resolutions change detected:', payload.eventType);
+        if (payload.eventType === 'DELETE' && payload.old?.id) {
+          await db.resolutions.delete(payload.old.id);
+        } else if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new?.id) {
+          await db.resolutions.put(payload.new as any);
         } else {
           pullFromCloud(true).catch(console.warn);
         }

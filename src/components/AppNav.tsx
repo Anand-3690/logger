@@ -13,10 +13,11 @@ import {
   Plus,
   Search,
   Tag,
+  Target,
   type LucideIcon,
 } from 'lucide-react';
 
-export type Route = 'dashboard' | 'reports' | 'on-this-day';
+export type Route = 'dashboard' | 'reports' | 'on-this-day' | 'resolutions';
 
 type Props = {
   route: Route;
@@ -34,6 +35,7 @@ type Props = {
 
 const PRIMARY: { id: Route; label: string; Icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { id: 'resolutions', label: 'Resolutions', Icon: Target },
   { id: 'reports', label: 'Reports', Icon: BarChart3 },
   { id: 'on-this-day', label: 'On this day', Icon: History },
 ];
@@ -195,13 +197,20 @@ export function AppNav(p: Props) {
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/90 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.04)]"
       >
-        <div className="mx-auto grid max-w-md grid-cols-4 items-center">
+        <div className="mx-auto grid max-w-md grid-cols-5 items-center">
           <Tab
             id="tab-mobile-dashboard"
             label="Dashboard"
             Icon={LayoutDashboard}
             active={p.route === 'dashboard'}
             onClick={() => p.onNavigate('dashboard')}
+          />
+          <Tab
+            id="tab-mobile-resolutions"
+            label="Resolutions"
+            Icon={Target}
+            active={p.route === 'resolutions'}
+            onClick={() => p.onNavigate('resolutions')}
           />
           <Tab
             id="tab-mobile-reports"

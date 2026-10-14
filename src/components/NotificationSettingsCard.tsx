@@ -19,12 +19,13 @@ import {
   unsubscribeFromWebPush,
   sendTestPushNotification,
   sendTestOnThisDayNotification,
+  sendTestResolutionNotification,
   triggerCronCheck,
   fetchCronStatus,
   PushStatus,
   CronStatusData,
 } from '../utils/pushNotifications';
-import { Calendar, History } from 'lucide-react';
+import { Calendar, History, Target } from 'lucide-react';
 
 interface NotificationSettingsCardProps {
   authToken?: string | null;
@@ -46,6 +47,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [isTestingOnThisDay, setIsTestingOnThisDay] = useState<boolean>(false);
+  const [isTestingResolution, setIsTestingResolution] = useState<boolean>(false);
   const [isCronRunning, setIsCronRunning] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
@@ -133,6 +135,26 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
       });
     } finally {
       setIsTestingOnThisDay(false);
+    }
+  };
+
+  const handleSendTestResolution = async () => {
+    try {
+      setIsTestingResolution(true);
+      setFeedbackMsg(null);
+      const res = await sendTestResolutionNotification(authToken);
+      setFeedbackMsg({
+        type: 'success',
+        text: res.message || 'Resolution test notification dispatched! 🎯',
+      });
+      if (onRefreshLogs) onRefreshLogs();
+    } catch (err: any) {
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || 'Failed to dispatch resolution test notification.',
+      });
+    } finally {
+      setIsTestingResolution(false);
     }
   };
 
@@ -304,6 +326,23 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
               <History className="w-3.5 h-3.5 text-amber-200" />
             )}
             <span>Test alert for today</span>
+          </button>
+
+          {/* Test Resolution Notification Button */}
+          <button
+            id="btn-send-test-resolution"
+            type="button"
+            onClick={handleSendTestResolution}
+            disabled={isTestingResolution || !status.isSubscribed}
+            title={!status.isSubscribed ? 'Enable notifications first' : "Test 'Resolution' notification with check-in buttons"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
+          >
+            {isTestingResolution ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Target className="w-3.5 h-3.5 text-emerald-200" />
+            )}
+            <span>Test Resolution Alert</span>
           </button>
 
           {/* Trigger Cron Tick Now */}

@@ -133,7 +133,7 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: data.icon || '/assets/icon-192.png',
     badge: data.badge || '/assets/icon-192.png',
-    tag: data.data?.category_id ? `reminder-${data.data.category_id}` : 'daily-reminder',
+    tag: data.tag || data.data?.tag || (data.data?.category_id ? `reminder-${data.data.category_id}` : 'daily-reminder'),
     renotify: true,
     data: data.data || {},
     actions: data.actions || [
@@ -176,6 +176,21 @@ async function saveToIndexedDB(logPayload) {
             created_at: now,
           };
           logsStore.put(logRecord);
+
+          // Update resolution completion status if resolution_id is provided
+          if (logPayload.resolution_id && db.objectStoreNames.contains('resolutions')) {
+            const resStore = tx.objectStore('resolutions');
+            const getReq = resStore.get(logPayload.resolution_id);
+            getReq.onsuccess = () => {
+              const resRecord = getReq.result;
+              if (resRecord) {
+                resRecord.last_completed_at = logPayload.log_date;
+                resRecord.updated_at = now;
+                resStore.put(resRecord);
+              }
+            };
+          }
+
           if (syncStore) {
             syncStore.put({
               id: logRecord.id,
@@ -183,6 +198,14 @@ async function saveToIndexedDB(logPayload) {
               action: 'upsert',
               timestamp: Date.now(),
             });
+            if (logPayload.resolution_id) {
+              syncStore.put({
+                id: logPayload.resolution_id,
+                table: 'resolutions',
+                action: 'upsert',
+                timestamp: Date.now(),
+              });
+            }
           }
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => resolve(false);
@@ -216,7 +239,10 @@ self.addEventListener('notificationclick', (event) => {
         const logPayload = {
           log_date: today,
           category_id: data.category_id,
-          notes: `Recorded via notification (${isPresent ? 'Present / Yes' : 'Absent / No'})`,
+          resolution_id: data.resolution_id,
+          notes: data.resolution_id
+            ? `Completed resolution via notification (${isPresent ? 'Done ✅' : 'Skipped ⚪'})`
+            : `Recorded via notification (${isPresent ? 'Present / Yes' : 'Absent / No'})`,
           status: action,
         };
 
@@ -242,11 +268,11 @@ self.addEventListener('notificationclick', (event) => {
 
         // 3. Show instant confirmation notification
         await self.registration.showNotification(
-          isPresent ? 'Activity Logged! ✅' : 'Check-in Noted ⚪',
+          isPresent ? 'Progress Recorded! ✅' : 'Check-in Noted ⚪',
           {
             body: isPresent
-              ? `Marked "Present" for today. Great job!`
-              : `Marked "Absent" for today.`,
+              ? `Marked complete for today. Great job!`
+              : `Marked as not completed today.`,
             icon: '/assets/icon-192.png',
             tag: 'log-feedback',
             silent: true,
@@ -261,7 +287,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     (async () => {
       let targetPath = data.url || '/';
-      if (data.category_id) {
+      if (data.category_id && !data.resolution_id && !data.url) {
         targetPath = `/?category_id=${data.category_id}`;
       }
 

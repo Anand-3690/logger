@@ -22,6 +22,70 @@ export interface PushSubscriptionRecord {
   created_at: string;
 }
 
+export type ResolutionInterval = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+
+export interface Resolution {
+  id: string;
+  category_id?: string;
+  title: string;
+  description?: string;
+  interval_type: ResolutionInterval;
+  reminder_time: string; // "HH:MM" in 24h format, e.g. "07:30"
+  days_of_week?: number[]; // 0 = Sun, 1 = Mon, ..., 6 = Sat (for weekly)
+  day_of_month?: number; // 1..31 (for monthly)
+  month_of_year?: number; // 1..12 (for yearly)
+  custom_interval_days?: number; // e.g. every 3 days
+  start_date: string; // YYYY-MM-DD
+  is_active: boolean;
+  last_completed_at?: string | null; // YYYY-MM-DD
+  created_at: string;
+  updated_at?: string;
+}
+
+export function isResolutionDueOnDate(res: Resolution, dateStr: string): boolean {
+  if (!res.is_active) return false;
+  if (!dateStr || (res.start_date && dateStr < res.start_date)) return false;
+
+  const parts = dateStr.split('T')[0].split('-').map(Number);
+  if (parts.length < 3) return false;
+  const [year, month, day] = parts;
+
+  switch (res.interval_type) {
+    case 'daily':
+      return true;
+
+    case 'weekly': {
+      // Create local date to determine day of week (0 = Sun, 6 = Sat)
+      const d = new Date(year, month - 1, day);
+      const dayOfWeek = d.getDay();
+      return Array.isArray(res.days_of_week) && res.days_of_week.includes(dayOfWeek);
+    }
+
+    case 'monthly': {
+      const targetDay = res.day_of_month ?? 1;
+      return day === targetDay;
+    }
+
+    case 'yearly': {
+      const targetMonth = res.month_of_year ?? 1;
+      const targetDay = res.day_of_month ?? 1;
+      return month === targetMonth && day === targetDay;
+    }
+
+    case 'custom': {
+      const interval = res.custom_interval_days && res.custom_interval_days > 0 ? res.custom_interval_days : 1;
+      const startParts = (res.start_date || dateStr).split('T')[0].split('-').map(Number);
+      const startMs = new Date(startParts[0], startParts[1] - 1, startParts[2]).getTime();
+      const currentMs = new Date(year, month - 1, day).getTime();
+      const diffDays = Math.round((currentMs - startMs) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays % interval === 0;
+    }
+
+    default:
+      return true;
+  }
+}
+
 export interface DailyLog {
   id: string;
   log_date: string; // YYYY-MM-DD

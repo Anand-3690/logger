@@ -1,10 +1,11 @@
 import Dexie, { Table } from 'dexie';
-import { Category, DailyLog } from './types';
+import { Category, DailyLog, Resolution } from './types';
 import { computeLogicalDate, getDayCutoffHour, getUserTimezone } from './utils/dayBoundary';
 
 export class TrackerDB extends Dexie {
   categories!: Table<Category, string>;
   dailyLogs!: Table<DailyLog, string>;
+  resolutions!: Table<Resolution, string>;
   
   // A table to track unsynced local changes
   syncQueue!: Table<{ id: string; table: string; action: 'upsert' | 'delete'; timestamp: number }, string>;
@@ -35,6 +36,11 @@ export class TrackerDB extends Dexie {
           );
         }
       });
+    });
+
+    // Version 3: Added resolutions table for flexible interval habit & goal tracking
+    this.version(3).stores({
+      resolutions: 'id, category_id, is_active, interval_type, reminder_time, updated_at'
     });
   }
 }

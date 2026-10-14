@@ -36,10 +36,15 @@
 ## 4. Current State & Established Patterns
 - **Active Navigation Views:**
   1. `dashboard`: Real-time daily timeline, quick logging drawer, and notification triggers.
-  2. `reports`: Metrics summaries and historical progress logs.
-  3. `on-this-day`: Route `/on-this-day` tracking yearly recurrences and historical logs.
+  2. `resolutions`: Dedicated habits & goals tab (`/resolutions`) with daily, weekly, monthly, yearly, and custom day intervals, one-tap check-in logging to `daily_logs`, active/pause toggling, and scheduled push alerts.
+  3. `reports`: Metrics summaries and historical progress logs.
+  4. `on-this-day`: Route `/on-this-day` tracking yearly recurrences and historical logs, dispatched at 09:00 AM IST.
+- **Hosting & Push Scheduling Architecture:**
+  - Google AI Studio container hosting (`https://daily-logger.ai.studio`) runs the Vite server with an in-process background scheduler (`setInterval` every 30s) triggering `/api/cron/notify` for time-accurate habit check-ins and 09:00 AM IST On-This-Day alerts.
+  - Vercel backup cron (`vercel.json`) configured for `30 3 * * *` (03:30 UTC = 09:00 AM IST).
+  - Web Push packets configured with `{ urgency: 'high', TTL: 86400 }` to ensure lockscreen delivery even when the phone or app is sleeping/closed.
 - **Offline Protocol:** Always write local mutations to IndexedDB first via `syncEngine.ts`, then opportunistically flush to Supabase.
-- **State Conventions:** Prefer explicit TypeScript interfaces (`HeaderProps`, `LogEntry`, `CategoryMetadata`) matching Supabase table schemas.
+- **State Conventions:** Prefer explicit TypeScript interfaces (`HeaderProps`, `LogEntry`, `CategoryMetadata`, `Resolution`) matching Supabase table schemas.
 
 ---
 

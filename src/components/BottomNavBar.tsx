@@ -1,9 +1,9 @@
 import React from 'react';
-import { Calendar, BarChart3, History, Search, Plus } from 'lucide-react';
+import { Calendar, BarChart3, History, Search, Plus, Target } from 'lucide-react';
 
 interface BottomNavBarProps {
-  currentView: 'dashboard' | 'reports' | 'on-this-day';
-  onViewChange: (view: 'dashboard' | 'reports' | 'on-this-day') => void;
+  currentView: 'dashboard' | 'reports' | 'on-this-day' | 'resolutions';
+  onViewChange: (view: 'dashboard' | 'reports' | 'on-this-day' | 'resolutions') => void;
   onOpenNewLog: () => void;
   onOpenSearch: () => void;
 }
@@ -41,27 +41,27 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
           <span className="text-[10px] mt-1 font-medium tracking-tight">Today</span>
         </button>
 
-        {/* 2. On This Day Tab */}
+        {/* 2. Resolutions Tab */}
         <button
           type="button"
-          id="btn-bottom-nav-on-this-day"
+          id="btn-bottom-nav-resolutions"
           onClick={() => {
-            onViewChange('on-this-day');
-            window.history.pushState(null, '', '/on-this-day');
+            onViewChange('resolutions');
+            window.history.pushState(null, '', '/resolutions');
           }}
           className={`flex flex-col items-center justify-center w-full py-1.5 transition-colors cursor-pointer ${
-            currentView === 'on-this-day'
-              ? 'text-blue-600 font-bold'
+            currentView === 'resolutions'
+              ? 'text-emerald-600 font-bold'
               : 'text-neutral-500 hover:text-neutral-800'
           }`}
         >
           <div className="relative">
-            <History className="w-5 h-5 transition-transform" />
-            {currentView === 'on-this-day' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
+            <Target className="w-5 h-5 transition-transform" />
+            {currentView === 'resolutions' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-emerald-600 rounded-full" />
             )}
           </div>
-          <span className="text-[10px] mt-1 font-medium tracking-tight">Memories</span>
+          <span className="text-[10px] mt-1 font-medium tracking-tight">Resolutions</span>
         </button>
 
         {/* 3. Center Elevated New Log Action */}
@@ -98,17 +98,27 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
           <span className="text-[10px] mt-1 font-medium tracking-tight">Reports</span>
         </button>
 
-        {/* 5. Search Tab */}
+        {/* 5. On This Day / Memories Tab */}
         <button
           type="button"
-          id="btn-bottom-nav-search"
-          onClick={onOpenSearch}
-          className="flex flex-col items-center justify-center w-full py-1.5 text-neutral-500 hover:text-neutral-800 transition-colors cursor-pointer"
+          id="btn-bottom-nav-on-this-day"
+          onClick={() => {
+            onViewChange('on-this-day');
+            window.history.pushState(null, '', '/on-this-day');
+          }}
+          className={`flex flex-col items-center justify-center w-full py-1.5 transition-colors cursor-pointer ${
+            currentView === 'on-this-day'
+              ? 'text-blue-600 font-bold'
+              : 'text-neutral-500 hover:text-neutral-800'
+          }`}
         >
           <div className="relative">
-            <Search className="w-5 h-5 transition-transform" />
+            <History className="w-5 h-5 transition-transform" />
+            {currentView === 'on-this-day' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
+            )}
           </div>
-          <span className="text-[10px] mt-1 font-medium tracking-tight">Search</span>
+          <span className="text-[10px] mt-1 font-medium tracking-tight">Memories</span>
         </button>
       </div>
     </nav>
