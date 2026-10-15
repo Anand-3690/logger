@@ -135,6 +135,7 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/assets/icon-192.png',
     tag: data.tag || data.data?.tag || (data.data?.category_id ? `reminder-${data.data.category_id}` : 'daily-reminder'),
     renotify: true,
+    requireInteraction: true,
     data: data.data || {},
     actions: data.actions || [
       { action: 'present', title: 'Present / Yes' },
@@ -144,7 +145,25 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, notificationOptions)
+    (async () => {
+      // 1. Show system notification
+      await self.registration.showNotification(data.title, notificationOptions);
+
+      // 2. Broadcast on-screen in-app event to any open tabs/windows
+      try {
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clientList) {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION_RECEIVED',
+            title: data.title,
+            body: data.body,
+            data: data.data,
+          });
+        }
+      } catch (err) {
+        console.warn('[SW] Client broadcast note:', err);
+      }
+    })()
   );
 });
 

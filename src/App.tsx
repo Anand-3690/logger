@@ -335,6 +335,10 @@ function AuthenticatedApp() {
         } catch (e) {
           console.warn('Failed to record log from notification message:', e);
         }
+      } else if (event.data && event.data.type === 'PUSH_NOTIFICATION_RECEIVED') {
+        const title = event.data.title || 'Notification Alert';
+        const body = event.data.body || '';
+        showToast(`🔔 ${title}${body ? `: ${body}` : ''}`, 'success');
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleMessage);

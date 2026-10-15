@@ -12,6 +12,12 @@ import {
   Sparkles,
   Zap,
   Activity,
+  Calendar,
+  History,
+  Target,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   getPushNotificationStatus,
@@ -25,7 +31,6 @@ import {
   PushStatus,
   CronStatusData,
 } from '../utils/pushNotifications';
-import { Calendar, History, Target } from 'lucide-react';
 
 interface NotificationSettingsCardProps {
   authToken?: string | null;
@@ -49,12 +54,16 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
   const [isTestingOnThisDay, setIsTestingOnThisDay] = useState<boolean>(false);
   const [isTestingResolution, setIsTestingResolution] = useState<boolean>(false);
   const [isCronRunning, setIsCronRunning] = useState<boolean>(false);
+  const [showTroubleshooting, setShowTroubleshooting] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const checkStatus = async () => {
     try {
       const currentStatus = await getPushNotificationStatus();
       setStatus(currentStatus);
+      if (currentStatus.permission === 'denied') {
+        setShowTroubleshooting(true);
+      }
       const cronInfo = await fetchCronStatus();
       setCronStatus(cronInfo);
     } catch (e) {
@@ -246,6 +255,19 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
         </button>
       </div>
 
+      {/* Blocked Permission Warning Banner */}
+      {status.permission === 'denied' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-amber-900 leading-tight">Notifications are blocked in your browser</p>
+            <p className="text-amber-800 leading-relaxed text-[11px]">
+              To receive on-screen alerts, click the padlock or tune icon (<strong className="font-semibold">🔒 / 🎚️</strong>) on the left side of your browser's address bar, change <strong className="font-semibold">Notifications</strong> to <strong className="font-semibold">Allow</strong>, and reload the page.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Internal Background Engine Status Banner */}
       {cronStatus && (
         <div className="bg-neutral-50 rounded-2xl p-3 border border-neutral-100 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -391,6 +413,56 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
           <div className="leading-relaxed flex-1">{feedbackMsg.text}</div>
         </div>
       )}
+
+      {/* On-Screen Notification Troubleshooting Guide */}
+      <div className="pt-2 border-t border-neutral-100">
+        <button
+          type="button"
+          onClick={() => setShowTroubleshooting((prev) => !prev)}
+          className="w-full flex items-center justify-between text-xs text-neutral-500 hover:text-neutral-800 transition-colors py-1 cursor-pointer font-medium"
+        >
+          <span className="flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
+            <span>Not seeing on-screen notification popups?</span>
+          </span>
+          {showTroubleshooting ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {showTroubleshooting && (
+          <div className="mt-2.5 p-3 rounded-2xl bg-neutral-50/80 border border-neutral-200/70 text-xs text-neutral-600 space-y-2 animate-in fade-in duration-150">
+            <div className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span>
+              <div>
+                <strong className="text-neutral-800">Browser Site Permission:</strong> Click the lock or tune icon (🔒 / 🎚️) beside the URL and ensure <strong className="text-neutral-800">Notifications</strong> are set to <strong className="text-emerald-700">Allow</strong>.
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span>
+              <div>
+                <strong className="text-neutral-800">Operating System "Do Not Disturb" / Focus Assist:</strong>
+                <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-neutral-500 text-[11px]">
+                  <li><strong className="text-neutral-700">Windows:</strong> Ensure <em>Focus assist / Do Not Disturb</em> in the bottom-right taskbar is turned OFF.</li>
+                  <li><strong className="text-neutral-700">macOS:</strong> Turn off <em>Focus / Do Not Disturb</em> in Control Center, and check <em>System Settings &gt; Notifications &gt; Google Chrome</em> has <em>Banners/Alerts</em> enabled.</li>
+                  <li><strong className="text-neutral-700">Linux (Ubuntu / GNOME):</strong> Open the top panel clock/calendar menu and ensure <em>Do Not Disturb</em> is toggled OFF.</li>
+                  <li><strong className="text-neutral-700">Android:</strong> Check that browser notifications are not set to "Silent" in App Notifications.</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">3</span>
+              <div>
+                <strong className="text-neutral-800">Interactive Banners (`requireInteraction`):</strong> Notifications are set to stay on your screen until dismissed so you won't miss them.
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">4</span>
+              <div>
+                <strong className="text-neutral-800">In-App Live Toast:</strong> When this application is open in your active browser tab, incoming notifications will also display an instant on-screen popup toast at the bottom of the screen.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

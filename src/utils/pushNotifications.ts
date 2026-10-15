@@ -307,6 +307,7 @@ export async function sendTestPushNotification(authToken?: string | null): Promi
         badge: '/assets/icon-192.png',
         tag: 'test-reminder',
         renotify: true,
+        requireInteraction: true,
         actions: [
           { action: 'present', title: 'Present / Yes' },
           { action: 'absent', title: 'Absent / No' },
@@ -424,6 +425,7 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
         badge: '/assets/icon-192.png',
         tag: `on-this-day-${todayStr}`,
         renotify: true,
+        requireInteraction: true,
         data: { url: '/on-this-day' },
         actions: [{ action: 'view', title: 'Open Memories' }],
       } as any);
@@ -501,6 +503,7 @@ export async function sendTestResolutionNotification(authToken?: string | null):
         badge: '/assets/icon-192.png',
         tag: `test-resolution-${Date.now()}`,
         renotify: true,
+        requireInteraction: true,
         actions: [
           { action: 'present', title: 'Completed ✅' },
           { action: 'absent', title: 'Not Today' },
@@ -603,6 +606,7 @@ export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Pro
             icon: '/assets/icon-192.png',
             badge: '/assets/icon-192.png',
             tag: `on-this-day-${todayStr}`,
+            requireInteraction: true,
             data: { url: '/on-this-day' },
             actions: [{ action: 'view', title: 'Open Memories' }],
           } as any);
