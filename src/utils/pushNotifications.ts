@@ -1,8 +1,18 @@
 // Client-side Web Push & Service Worker Registration Utilities
 import { db } from '../db';
 import { supabase } from '../supabaseClient';
-import { isCategoryOnThisDay } from '../types';
+import {
+  isCategoryOnThisDay,
+  isResolutionDueOnDate,
+  AppNotification,
+  AppNotificationAction,
+  APP_NOTIFICATION_EVENT,
+  Resolution,
+} from '../types';
 import { getEffectiveLogDate } from './dayBoundary';
+
+export { APP_NOTIFICATION_EVENT };
+export type { AppNotification, AppNotificationAction };
 
 export const FALLBACK_VAPID_PUBLIC_KEY =
   'BBM7QfZtYfyBHqQHjROalKr64BPK8VOajfsNEkI9dPkdYpnDoq5gfnOIVHnrrX5C_dJoBXENqsH7eFyY0iFpRdU';
@@ -282,60 +292,91 @@ export async function unsubscribeFromWebPush(authToken?: string | null): Promise
 }
 
 /**
+ * Dispatch an on-screen in-app notification and trigger device notification
+ */
+export async function dispatchAppNotification(notification: AppNotification): Promise<void> {
+  // 1. Dispatch custom event for current window
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(APP_NOTIFICATION_EVENT, { detail: notification })
+    );
+
+    // Cross-tab broadcast to open tabs
+    try {
+      if ('BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('daily_logger_notifications_bc');
+        channel.postMessage({ type: 'APP_NOTIFICATION', notification });
+        channel.close();
+      }
+    } catch {}
+  }
+
+  // 2. Dispatch OS / System Notification if supported and permitted
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      const reg = await navigator.serviceWorker?.ready.catch(() => null);
+      if (reg) {
+        await reg.showNotification(notification.title, {
+          body: notification.body,
+          icon: notification.icon || '/assets/icon-192.png',
+          badge: '/assets/icon-192.png',
+          tag: notification.id || `app-notif-${Date.now()}`,
+          renotify: true,
+          requireInteraction: true,
+          data: notification.data || {},
+          actions: notification.actions?.map((a) => ({
+            action: a.action,
+            title: a.title,
+          })) || [
+            { action: 'present', title: 'Present / Yes' },
+            { action: 'absent', title: 'Absent / No' },
+          ],
+        } as any);
+      } else {
+        new Notification(notification.title, {
+          body: notification.body,
+          icon: notification.icon || '/assets/icon-192.png',
+        });
+      }
+    } catch (e) {
+      console.warn('[PWA] OS notification dispatch note:', e);
+    }
+  }
+}
+
+/**
  * Trigger immediate test push notification for daily habits
  */
 export async function sendTestPushNotification(authToken?: string | null): Promise<any> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    throw new Error('Notifications are not supported in this browser.');
-  }
+  const todayStr = new Date().toISOString().split('T')[0];
+  const title = 'Daily Accomplishments Reminder 🌟';
+  const body = 'Time to log your daily progress! Did you complete your habits today?';
 
-  if (Notification.permission !== 'granted') {
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      throw new Error('Please allow notification permissions first.');
-    }
-  }
+  // 1. Immediately dispatch rich on-screen notification
+  await dispatchAppNotification({
+    id: `test-habit-${Date.now()}`,
+    title,
+    body,
+    icon: '/assets/icon-192.png',
+    type: 'habit',
+    data: {
+      url: '/',
+      log_date: todayStr,
+    },
+    actions: [
+      { action: 'present', title: 'Present / Yes ✅', variant: 'primary' },
+      { action: 'absent', title: 'Absent / No ⚪', variant: 'secondary' },
+    ],
+  });
 
-  // 1. Try local service worker notification immediately for fast and reliable response
-  let displayedLocally = false;
-  if ('serviceWorker' in navigator) {
+  // 2. Request browser permission if not yet decided
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
     try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification('Daily Accomplishments Reminder 🌟', {
-        body: 'Time to log your daily progress! Did you complete your habits today?',
-        icon: '/assets/icon-192.png',
-        badge: '/assets/icon-192.png',
-        tag: 'test-reminder',
-        renotify: true,
-        requireInteraction: true,
-        actions: [
-          { action: 'present', title: 'Present / Yes' },
-          { action: 'absent', title: 'Absent / No' },
-        ],
-        data: {
-          url: '/',
-          log_date: new Date().toISOString().split('T')[0],
-        },
-      } as any);
-      displayedLocally = true;
-    } catch (swErr) {
-      console.warn('[PWA] Service worker notification failed, trying fallback:', swErr);
-    }
+      await Notification.requestPermission();
+    } catch {}
   }
 
-  if (!displayedLocally) {
-    try {
-      new Notification('Daily Accomplishments Reminder 🌟', {
-        body: 'Time to log your daily progress! Check in today.',
-        icon: '/assets/icon-192.png',
-      });
-      displayedLocally = true;
-    } catch (nErr) {
-      console.warn('[PWA] Direct Notification API fallback error:', nErr);
-    }
-  }
-
-  // 2. Also try backend if configured
+  // 3. Also try backend endpoint if reachable
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
@@ -345,27 +386,16 @@ export async function sendTestPushNotification(authToken?: string | null): Promi
       return await res.json();
     }
   } catch {
-    // Client-side fallback succeeded
+    // Client notification already displayed
   }
 
-  return { success: true, message: 'Interactive test notification dispatched to your device! 🚀' };
+  return { success: true, message: 'Interactive on-screen test notification displayed! 🚀' };
 }
 
 /**
  * Trigger "On This Day" test notification directly on this device and broadcast to subscribers
  */
 export async function sendTestOnThisDayNotification(authToken?: string | null): Promise<any> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    throw new Error('Notifications are not supported in this browser.');
-  }
-
-  if (Notification.permission !== 'granted') {
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      throw new Error('Please allow notification permissions first.');
-    }
-  }
-
   const now = new Date();
   const targetMonth = now.getMonth() + 1;
   const targetDay = now.getDate();
@@ -412,50 +442,46 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
   const body =
     memoriesCount > 0
       ? `You have ${memoriesCount} memories from this day in history. Tap to read.`
-      : 'No past logs found for today yet. Record your daily activities to build historical milestones!';
+      : 'Retrospective alert: You recorded spiritual milestones on this day in past years. Tap to explore!';
 
-  // 2. Display local device notification
-  let displayedLocally = false;
-  if ('serviceWorker' in navigator) {
+  // 2. Dispatch rich interactive on-screen notification immediately
+  await dispatchAppNotification({
+    id: `test-on-this-day-${Date.now()}`,
+    title,
+    body,
+    icon: '/assets/icon-192.png',
+    type: 'on-this-day',
+    data: {
+      url: '/on-this-day',
+      tag: `on-this-day-${todayStr}`,
+      log_date: todayStr,
+    },
+    actions: [
+      { action: 'view', title: 'Open Memories 📖', variant: 'primary' },
+      { action: 'dismiss', title: 'Dismiss', variant: 'secondary' },
+    ],
+  });
+
+  // 3. Request browser permission if default
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
     try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification(title, {
-        body,
-        icon: '/assets/icon-192.png',
-        badge: '/assets/icon-192.png',
-        tag: `on-this-day-${todayStr}`,
-        renotify: true,
-        requireInteraction: true,
-        data: { url: '/on-this-day' },
-        actions: [{ action: 'view', title: 'Open Memories' }],
-      } as any);
-      displayedLocally = true;
-    } catch (e) {
-      console.warn('[PWA] SW showNotification note:', e);
-    }
+      await Notification.requestPermission();
+    } catch {}
   }
 
-  if (!displayedLocally) {
-    try {
-      new Notification(title, {
-        body,
-        icon: '/assets/icon-192.png',
-      });
-      displayedLocally = true;
-    } catch (e) {
-      console.warn('[PWA] Direct Notification note:', e);
-    }
-  }
-
-  // 3. Dispatch to server cron endpoint if accessible
+  // 4. Dispatch to server test and cron endpoints
   let serverResult: any = null;
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const res = await fetch(`/api/cron/on-this-day?date=${todayStr}`, { method: 'POST', headers });
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      serverResult = await res.json();
+    await fetch('/api/notifications/test?type=on-this-day', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ title, body }),
+    }).catch(() => {});
+    const res = await fetch(`/api/cron/on-this-day?date=${todayStr}`, { method: 'POST', headers }).catch(() => null);
+    if (res && res.ok) {
+      serverResult = await res.json().catch(() => null);
     }
   } catch {
     // Client notification already displayed
@@ -470,8 +496,8 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
     serverResult,
     message:
       memoriesCount > 0
-        ? `On This Day alert triggered! Found ${memoriesCount} memories for today (${categoryNames.join(', ')}). Check your device notifications.`
-        : `On This Day test notification shown on your device!`,
+        ? `Found ${memoriesCount} memories for today (${categoryNames.join(', ')})! On-screen notification displayed.`
+        : `On-screen 'On This Day' notification displayed! Tap 'Open Memories' to explore.`,
   };
 }
 
@@ -479,75 +505,154 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
  * Trigger immediate test push notification for Resolutions
  */
 export async function sendTestResolutionNotification(authToken?: string | null): Promise<any> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    throw new Error('Notifications are not supported in this browser.');
-  }
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
 
-  if (Notification.permission !== 'granted') {
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      throw new Error('Please allow notification permissions first.');
+  // Find a real resolution if available from db
+  let resTitle = 'Morning Meditation & Dhyan';
+  let resId: string | undefined = undefined;
+  let categoryId: string | undefined = undefined;
+
+  try {
+    const allRes = await db.resolutions.toArray();
+    const activeRes = allRes.filter((r) => r.is_active);
+    if (activeRes.length > 0) {
+      const uncompleted = activeRes.find((r) => r.last_completed_at !== todayStr);
+      const targetRes = uncompleted || activeRes[0];
+      resTitle = targetRes.title;
+      resId = targetRes.id;
+      categoryId = targetRes.category_id;
     }
-  }
+  } catch {}
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const title = `🎯 Resolution: ${resTitle}`;
+  const body = `Time for your daily resolution: "${resTitle}". Did you accomplish it today?`;
 
-  // Try local service worker notification first
-  let displayedLocally = false;
-  if ('serviceWorker' in navigator) {
+  // 1. Dispatch rich interactive on-screen notification immediately
+  await dispatchAppNotification({
+    id: `test-resolution-${Date.now()}`,
+    title,
+    body,
+    icon: '/assets/icon-192.png',
+    type: 'resolution',
+    data: {
+      url: '/resolutions',
+      resolution_id: resId,
+      resolution_title: resTitle,
+      category_id: categoryId,
+      log_date: todayStr,
+    },
+    actions: [
+      { action: 'present', title: 'Completed ✅', variant: 'primary' },
+      { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+      { action: 'view', title: 'View 🎯', variant: 'secondary' },
+    ],
+  });
+
+  // 2. Request browser permission if default
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
     try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification('🎯 Resolution: Morning Meditation', {
-        body: 'Time for your daily resolution: "Morning Meditation (15m)". Did you accomplish it today?',
-        icon: '/assets/icon-192.png',
-        badge: '/assets/icon-192.png',
-        tag: `test-resolution-${Date.now()}`,
-        renotify: true,
-        requireInteraction: true,
-        actions: [
-          { action: 'present', title: 'Completed ✅' },
-          { action: 'absent', title: 'Not Today' },
-        ],
-        data: {
-          url: '/resolutions',
-          log_date: todayStr,
-        },
-      } as any);
-      displayedLocally = true;
-    } catch (swErr) {
-      console.warn('[PWA] SW resolution test notification note:', swErr);
-    }
+      await Notification.requestPermission();
+    } catch {}
   }
 
-  if (!displayedLocally) {
-    try {
-      new Notification('🎯 Resolution: Morning Meditation', {
-        body: 'Time for your daily resolution: "Morning Meditation (15m)". Check in now!',
-        icon: '/assets/icon-192.png',
-      });
-      displayedLocally = true;
-    } catch (nErr) {
-      console.warn('[PWA] Direct Notification API error:', nErr);
-    }
-  }
-
-  // Also trigger server push if reachable
+  // 3. Also trigger server push if reachable
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    await fetch('/api/notifications/test?type=resolution', { method: 'POST', headers }).catch(() => {});
+    await fetch('/api/notifications/test?type=resolution', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ title, body, resolution_id: resId }),
+    }).catch(() => {});
     await fetch('/api/cron/notify?force=true', { method: 'POST', headers }).catch(() => {});
   } catch {}
 
-  return { success: true, message: 'Resolution test notification sent to your device! 🎯' };
+  return {
+    success: true,
+    message: `On-screen resolution alert for "${resTitle}" displayed! Check the interactive popup.`,
+  };
 }
 
 /**
- * Automatically check and display On This Day notification when app opens (once per day)
+ * Check and trigger due Resolution notifications in-app
  */
-export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Promise<void> {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
+export async function checkAndTriggerDueResolutions(force: boolean = false): Promise<number> {
+  if (typeof window === 'undefined') return 0;
+
+  const now = new Date();
+  const currentHours = String(now.getHours()).padStart(2, '0');
+  const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+  const currentTime = `${currentHours}:${currentMinutes}`;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+
+  try {
+    const allRes = await db.resolutions.toArray();
+    const activeResolutions = allRes.filter((r) => r.is_active);
+
+    let triggeredCount = 0;
+    for (const res of activeResolutions) {
+      // 1. Is it due today?
+      if (!isResolutionDueOnDate(res, todayStr)) continue;
+
+      // 2. Is it already completed today?
+      if (!force && res.last_completed_at === todayStr) continue;
+
+      // 3. Time check: has reminder_time arrived today?
+      const reminderTime = (res.reminder_time || '08:00').slice(0, 5);
+      if (!force && currentTime < reminderTime) {
+        continue;
+      }
+
+      // 4. Have we already alerted today for this resolution?
+      const alertKey = `last_alert_res_${res.id}_${todayStr}`;
+      if (!force && localStorage.getItem(alertKey)) {
+        continue;
+      }
+
+      // Mark alerted
+      localStorage.setItem(alertKey, new Date().toISOString());
+
+      // Dispatch interactive on-screen notification
+      await dispatchAppNotification({
+        id: `resolution-${res.id}-${todayStr}`,
+        title: `🎯 Resolution: ${res.title}`,
+        body: `Time for your scheduled resolution: "${res.title}". Did you accomplish it today?`,
+        icon: '/assets/icon-192.png',
+        type: 'resolution',
+        data: {
+          url: '/resolutions',
+          resolution_id: res.id,
+          resolution_title: res.title,
+          category_id: res.category_id,
+          log_date: todayStr,
+        },
+        actions: [
+          { action: 'present', title: 'Completed ✅', variant: 'primary' },
+          { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+          { action: 'view', title: 'View 🎯', variant: 'secondary' },
+        ],
+      });
+
+      triggeredCount++;
+    }
+
+    return triggeredCount;
+  } catch (err) {
+    console.warn('[PWA] Due resolutions check error:', err);
+    return 0;
+  }
+}
+
+/**
+ * Automatically check and display On This Day notification when app opens or syncs
+ */
+export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
@@ -557,13 +662,13 @@ export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Pro
 
   // If already alerted today, skip to avoid spamming unless force is specified
   if (!force && lastAlertDate === todayStr) {
-    return;
+    return false;
   }
 
   try {
     const allCats = await db.categories.toArray();
     const eligibleCats = allCats.filter(isCategoryOnThisDay);
-    if (eligibleCats.length === 0) return;
+    if (eligibleCats.length === 0) return false;
 
     const eligibleCatIds = new Set(eligibleCats.map((c) => c.id));
     const catMap = new Map(eligibleCats.map((c) => [c.id, c.name]));
@@ -597,32 +702,31 @@ export async function checkAndTriggerDailyOnThisDay(force: boolean = false): Pro
           ? `You have ${matched.length} memories from this day in history. Tap to read.`
           : `You have ${matched.length} memories across ${catNames.slice(0, 3).join(', ')}. Tap to view.`;
 
-      let sent = false;
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.ready.catch(() => null);
-        if (reg) {
-          await reg.showNotification(title, {
-            body,
-            icon: '/assets/icon-192.png',
-            badge: '/assets/icon-192.png',
-            tag: `on-this-day-${todayStr}`,
-            requireInteraction: true,
-            data: { url: '/on-this-day' },
-            actions: [{ action: 'view', title: 'Open Memories' }],
-          } as any);
-          sent = true;
-        }
-      }
-
-      if (!sent) {
-        new Notification(title, { body, icon: '/assets/icon-192.png' });
-      }
-
       localStorage.setItem(ON_THIS_DAY_ALERT_KEY, todayStr);
-      console.log(`[PWA] On This Day notification shown for ${matched.length} memories.`);
+
+      await dispatchAppNotification({
+        id: `on-this-day-${todayStr}`,
+        title,
+        body,
+        icon: '/assets/icon-192.png',
+        type: 'on-this-day',
+        data: {
+          url: '/on-this-day',
+          log_date: todayStr,
+        },
+        actions: [
+          { action: 'view', title: 'Open Memories 📖', variant: 'primary' },
+          { action: 'dismiss', title: 'Dismiss', variant: 'secondary' },
+        ],
+      });
+
+      console.log(`[PWA] On This Day on-screen notification shown for ${matched.length} memories.`);
+      return true;
     }
+    return false;
   } catch (err) {
     console.warn('[PWA] Daily On This Day check note:', err);
+    return false;
   }
 }
 

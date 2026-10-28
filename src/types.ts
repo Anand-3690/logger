@@ -22,6 +22,33 @@ export interface PushSubscriptionRecord {
   created_at: string;
 }
 
+export interface AppNotificationAction {
+  action: string;
+  title: string;
+  variant?: 'primary' | 'secondary' | 'danger';
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  body: string;
+  icon?: string;
+  type?: 'on-this-day' | 'resolution' | 'habit' | 'general';
+  data?: {
+    url?: string;
+    log_date?: string;
+    category_id?: string;
+    category_name?: string;
+    resolution_id?: string;
+    resolution_title?: string;
+    [key: string]: any;
+  };
+  actions?: AppNotificationAction[];
+  timestamp?: number;
+}
+
+export const APP_NOTIFICATION_EVENT = 'daily_logger_app_notification';
+
 export type ResolutionInterval = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 
 export interface Resolution {

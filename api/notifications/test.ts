@@ -44,14 +44,19 @@ export default async function handler(req: any, res: any) {
     let payloadStr = '';
 
     if (testType === 'resolution') {
+      const title = req.body?.title || req.query?.title || '🎯 Resolution: Morning Meditation & Dhyan';
+      const body = req.body?.body || req.query?.body || 'Did you complete your daily resolution "Morning Meditation (15m)" today?';
+      const resId = req.body?.resolution_id || req.query?.resolution_id;
+
       payloadStr = JSON.stringify({
-        title: '🎯 Resolution: Morning Meditation & Dhyan',
-        body: 'Did you complete your daily resolution "Morning Meditation (15m)" today?',
+        title,
+        body,
         icon: '/assets/icon-192.png',
         badge: '/assets/icon-192.png',
         tag: `resolution-test-${todayStr}`,
         data: {
           url: '/resolutions',
+          resolution_id: resId,
           log_date: todayStr,
         },
         actions: [
@@ -60,15 +65,19 @@ export default async function handler(req: any, res: any) {
         ],
       });
     } else if (testType === 'on-this-day') {
+      const title = req.body?.title || req.query?.title || 'Guruhari Darshan: On This Day';
+      const body = req.body?.body || req.query?.body || 'You have memorable entries from this day in previous years. Tap to read.';
+
       payloadStr = JSON.stringify({
-        title: 'Guruhari Darshan: On This Day',
-        body: 'You have memorable entries from this day in previous years. Tap to read.',
+        title,
+        body,
         icon: '/assets/icon-192.png',
         badge: '/assets/icon-192.png',
         tag: `on-this-day-${todayStr}`,
         data: {
           url: '/on-this-day',
           tag: `on-this-day-${todayStr}`,
+          log_date: todayStr,
         },
         actions: [
           { action: 'view', title: 'Open Memories' },

@@ -321,8 +321,8 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             id="btn-send-test-push"
             type="button"
             onClick={handleSendTestPush}
-            disabled={isTesting || !status.isSubscribed}
-            title={!status.isSubscribed ? 'Enable notifications first' : 'Broadcast a test notification'}
+            disabled={isTesting}
+            title="Broadcast a test habit check-in notification"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTesting ? (
@@ -338,8 +338,8 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             id="btn-send-test-on-this-day"
             type="button"
             onClick={handleSendTestOnThisDay}
-            disabled={isTestingOnThisDay || !status.isSubscribed}
-            title={!status.isSubscribed ? 'Enable notifications first' : "Test 'On This Day' alert for today's historical memories"}
+            disabled={isTestingOnThisDay}
+            title="Test interactive 'On This Day' alert for today's historical memories"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTestingOnThisDay ? (
@@ -355,8 +355,8 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             id="btn-send-test-resolution"
             type="button"
             onClick={handleSendTestResolution}
-            disabled={isTestingResolution || !status.isSubscribed}
-            title={!status.isSubscribed ? 'Enable notifications first' : "Test 'Resolution' notification with check-in buttons"}
+            disabled={isTestingResolution}
+            title="Test interactive 'Resolution' alert with check-in buttons"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTestingResolution ? (

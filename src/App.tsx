@@ -13,13 +13,17 @@ import { VercelSchemaModal } from './components/VercelSchemaModal';
 import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
 import { ResolutionsView } from './components/ResolutionsView';
+import { OnScreenNotificationBanner } from './components/OnScreenNotificationBanner';
 import { resolveMigratedIcon } from './components/CategoryIcon';
 import {
   registerServiceWorker,
   checkAndTriggerDailyOnThisDay,
+  checkAndTriggerDueResolutions,
   getPushNotificationStatus,
   subscribeToWebPush,
   unsubscribeFromWebPush,
+  APP_NOTIFICATION_EVENT,
+  AppNotification,
 } from './utils/pushNotifications';
 import { getTodayLocalDate, getCurrentLocalMonth, parseLocalDate, formatLocalDate } from './utils/dateUtils';
 import {
@@ -161,10 +165,127 @@ function AuthenticatedApp() {
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Listen for rich in-app on-screen notifications
+  useEffect(() => {
+    const handleAppNotification = (e: Event) => {
+      const customEvent = e as CustomEvent<AppNotification>;
+      if (customEvent.detail) {
+        setActiveNotification(customEvent.detail);
+      }
+    };
+
+    window.addEventListener(APP_NOTIFICATION_EVENT, handleAppNotification);
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if ('BroadcastChannel' in window) {
+        channel = new BroadcastChannel('daily_logger_notifications_bc');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'APP_NOTIFICATION' && event.data.notification) {
+            setActiveNotification(event.data.notification);
+          }
+        };
+      }
+    } catch {}
+
+    return () => {
+      window.removeEventListener(APP_NOTIFICATION_EVENT, handleAppNotification);
+      channel?.close();
+    };
+  }, []);
+
+  const handleNotificationAction = async (action: string, notif: AppNotification) => {
+    setActiveNotification(null);
+
+    if (action === 'dismiss') {
+      return;
+    }
+
+    if (action === 'view') {
+      const url = notif.data?.url || '/';
+      window.history.pushState(null, '', url);
+      if (url.includes('/resolutions')) {
+        setCurrentView('resolutions');
+      } else if (url.includes('/on-this-day')) {
+        setCurrentView('on-this-day');
+      } else if (url.includes('/reports')) {
+        setCurrentView('reports');
+      } else {
+        setCurrentView('dashboard');
+      }
+      setForceRender((prev) => prev + 1);
+      return;
+    }
+
+    if (action === 'present' || action === 'absent') {
+      const isPresent = action === 'present';
+      const logDate = notif.data?.log_date || new Date().toISOString().split('T')[0];
+      const resId = notif.data?.resolution_id;
+      const catId = notif.data?.category_id || categories[0]?.id || 'general';
+
+      try {
+        const now = new Date().toISOString();
+        const existing = await db.dailyLogs.where({ log_date: logDate, category_id: catId }).first();
+        const id = existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`);
+
+        const noteText = resId
+          ? `Completed resolution: "${notif.data?.resolution_title || 'Resolution'}" via on-screen alert (${isPresent ? 'Done ✅' : 'Skipped ⚪'})`
+          : `Recorded via on-screen alert (${isPresent ? 'Present / Yes' : 'Absent / No'})`;
+
+        const record: DailyLog = {
+          id,
+          log_date: logDate,
+          category_id: catId,
+          notes: noteText,
+          status: action,
+          updated_at: now,
+          created_at: existing ? existing.created_at : now,
+        };
+
+        await db.dailyLogs.put(record);
+        await db.syncQueue.put({
+          id,
+          table: 'daily_logs',
+          action: 'upsert',
+          timestamp: Date.now(),
+        });
+
+        if (resId) {
+          const resRecord = await db.resolutions.get(resId);
+          if (resRecord) {
+            await db.resolutions.update(resId, {
+              last_completed_at: isPresent ? logDate : null,
+              updated_at: now,
+            });
+            await db.syncQueue.put({
+              id: resId,
+              table: 'resolutions',
+              action: 'upsert',
+              timestamp: Date.now(),
+            });
+          }
+        }
+
+        processSyncQueue().catch(() => {});
+        showToast(
+          isPresent
+            ? (resId ? '🎯 Resolution marked complete! Great job! ✅' : 'Activity recorded as Present! ✅')
+            : (resId ? 'Resolution check-in noted (Not today).' : 'Activity recorded as Absent.'),
+          'success'
+        );
+        setForceRender((prev) => prev + 1);
+      } catch (err) {
+        console.error('Failed to record notification action:', err);
+        showToast('Failed to record activity', 'error');
+      }
+    }
   };
 
   // Global keyboard shortcut: Cmd+K / Ctrl+K opens Search Palette
@@ -307,7 +428,7 @@ function AuthenticatedApp() {
         setForceRender((prev) => prev + 1);
       } else if (event.data && event.data.type === 'RECORD_LOG' && event.data.data) {
         try {
-          const { log_date, category_id, notes, status } = event.data.data;
+          const { log_date, category_id, notes, status, resolution_id } = event.data.data;
           const existing = category_id 
             ? await db.dailyLogs.where({ log_date, category_id }).first()
             : await db.dailyLogs.where({ log_date }).first();
@@ -330,14 +451,73 @@ function AuthenticatedApp() {
             action: 'upsert',
             timestamp: Date.now(),
           });
+
+          // Also update resolution if resolution_id was provided
+          if (resolution_id) {
+            const resRecord = await db.resolutions.get(resolution_id);
+            if (resRecord) {
+              await db.resolutions.update(resolution_id, {
+                last_completed_at: status === 'present' ? log_date : null,
+                updated_at: now,
+              });
+              await db.syncQueue.put({
+                id: resolution_id,
+                table: 'resolutions',
+                action: 'upsert',
+                timestamp: Date.now(),
+              });
+            }
+          }
+
           processSyncQueue();
-          showToast('Activity recorded from notification! ✅', 'success');
+          showToast(
+            resolution_id && status === 'present'
+              ? '🎯 Resolution marked complete from notification! ✅'
+              : 'Activity recorded from notification! ✅',
+            'success'
+          );
+          setForceRender((prev) => prev + 1);
         } catch (e) {
           console.warn('Failed to record log from notification message:', e);
         }
       } else if (event.data && event.data.type === 'PUSH_NOTIFICATION_RECEIVED') {
         const title = event.data.title || 'Notification Alert';
         const body = event.data.body || '';
+        const notifData = event.data.data || {};
+
+        let notifType: 'on-this-day' | 'resolution' | 'habit' | 'general' = 'general';
+        if (notifData.url?.includes('on-this-day') || title.toLowerCase().includes('on this day')) {
+          notifType = 'on-this-day';
+        } else if (notifData.resolution_id || title.toLowerCase().includes('resolution')) {
+          notifType = 'resolution';
+        } else if (notifData.category_id) {
+          notifType = 'habit';
+        }
+
+        setActiveNotification({
+          id: notifData.tag || `push-${Date.now()}`,
+          title,
+          body,
+          type: notifType,
+          data: notifData,
+          actions: event.data.actions || (
+            notifType === 'resolution'
+              ? [
+                  { action: 'present', title: 'Completed ✅', variant: 'primary' },
+                  { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+                  { action: 'view', title: 'View 🎯', variant: 'secondary' },
+                ]
+              : notifType === 'on-this-day'
+              ? [
+                  { action: 'view', title: 'Open Memories 📖', variant: 'primary' },
+                  { action: 'dismiss', title: 'Dismiss', variant: 'secondary' },
+                ]
+              : [
+                  { action: 'present', title: 'Present / Yes ✅', variant: 'primary' },
+                  { action: 'absent', title: 'Absent / No ⚪', variant: 'secondary' },
+                ]
+          ),
+        });
         showToast(`🔔 ${title}${body ? `: ${body}` : ''}`, 'success');
       }
     };
@@ -358,6 +538,9 @@ function AuthenticatedApp() {
       checkAndTriggerDailyOnThisDay().catch((err) =>
         console.warn('On This Day check note:', err)
       );
+      checkAndTriggerDueResolutions().catch((err) =>
+        console.warn('Resolutions check note:', err)
+      );
     };
 
     // Run immediately on load
@@ -377,6 +560,9 @@ function AuthenticatedApp() {
       checkAndTriggerDailyOnThisDay().catch((err) =>
         console.warn('On This Day sync check note:', err)
       );
+      checkAndTriggerDueResolutions().catch((err) =>
+        console.warn('Resolutions sync check note:', err)
+      );
     };
 
     window.addEventListener('online', performFullSync);
@@ -384,9 +570,11 @@ function AuthenticatedApp() {
     window.addEventListener('activity_sync_completed', handleSyncComplete);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Periodic check to flush unsynced local mutations (zero network egress when queue is empty)
+    // Periodic check to flush unsynced local mutations & evaluate due notifications (every 30s)
     const queueInterval = setInterval(() => {
       processSyncQueue().catch(console.warn);
+      checkAndTriggerDueResolutions().catch(console.warn);
+      checkAndTriggerDailyOnThisDay().catch(console.warn);
     }, 30000);
 
     return () => {
@@ -887,6 +1075,13 @@ function AuthenticatedApp() {
           checkNotificationsStatus();
         }}
         authToken={authToken}
+      />
+
+      {/* Interactive On-Screen Notification Banner for On-This-Day, Resolutions & Reminders */}
+      <OnScreenNotificationBanner
+        notification={activeNotification}
+        onDismiss={() => setActiveNotification(null)}
+        onAction={handleNotificationAction}
       />
 
       {toastMessage && (

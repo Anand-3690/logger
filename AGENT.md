@@ -85,3 +85,10 @@
   - Configured Vite middleware in `vite.config.ts` to seamlessly route `/api/notifications/*` and `/api/cron/*` endpoints in local development.
   - Implemented automated in-app daily check (`checkAndTriggerDailyOnThisDay`) in `App.tsx` so users receive On This Day alerts locally even when using the app as an offline PWA.
   - Added dedicated "Test 'On This Day' Alert" buttons in both `NotificationSettingsCard.tsx` and `OnThisDayView.tsx` with live diagnostic memory summaries.
+- **Interactive On-Screen Notifications for On-This-Day & Resolutions:**
+  - Designed and deployed `<OnScreenNotificationBanner>` component (`src/components/OnScreenNotificationBanner.tsx`) rendering high-priority, glassmorphic interactive alerts directly within the open web app.
+  - Built unified in-app notification dispatcher (`dispatchAppNotification` in `src/utils/pushNotifications.ts`) supporting cross-tab synchronization via `BroadcastChannel` and OS-level ServiceWorker fallback.
+  - Added client-side automated scheduler (`checkAndTriggerDueResolutions`) evaluating active habits against reminder times, start dates, and recurrence frequencies (daily, weekly, monthly, yearly, custom).
+  - Wired interactive one-tap check-in buttons ("Completed ✅", "Not Today ⚪", "Open Memories 📖") directly within the on-screen banner to write to IndexedDB and queue cloud sync.
+  - Fixed Service Worker and `App.tsx` `RECORD_LOG` message listeners to properly update `db.resolutions.last_completed_at` upon notification check-in.
+  - Added dedicated "Test Alert" button directly on the Resolutions screen header and unlocked test alert buttons in `NotificationSettingsCard.tsx`.

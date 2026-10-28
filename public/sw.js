@@ -158,6 +158,7 @@ self.addEventListener('push', (event) => {
             title: data.title,
             body: data.body,
             data: data.data,
+            actions: data.actions || notificationOptions.actions,
           });
         }
       } catch (err) {
@@ -203,7 +204,7 @@ async function saveToIndexedDB(logPayload) {
             getReq.onsuccess = () => {
               const resRecord = getReq.result;
               if (resRecord) {
-                resRecord.last_completed_at = logPayload.log_date;
+                resRecord.last_completed_at = logPayload.status === 'present' ? logPayload.log_date : null;
                 resRecord.updated_at = now;
                 resStore.put(resRecord);
               }

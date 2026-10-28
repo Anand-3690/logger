@@ -245,11 +245,15 @@ export const OnThisDayView: React.FC<OnThisDayViewProps> = ({ onBack, onAddRefle
       setIsSendingTestNotification(true);
       setTestNotificationFeedback(null);
       if (pushPermission !== 'granted') {
-        await subscribeToWebPush();
-        setPushPermission('granted');
+        try {
+          await subscribeToWebPush();
+          setPushPermission('granted');
+        } catch {
+          // Continue to display in-app on-screen alert even if OS permission is not granted
+        }
       }
       const res = await sendTestOnThisDayNotification();
-      setTestNotificationFeedback(res.message || 'Notification triggered! Check your device.');
+      setTestNotificationFeedback(res.message || 'On-screen notification triggered! 📖');
     } catch (err: any) {
       setTestNotificationFeedback(err?.message || 'Failed to trigger notification. Check permissions.');
     } finally {

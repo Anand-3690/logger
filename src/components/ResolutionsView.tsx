@@ -15,11 +15,14 @@ import {
   Flame,
   AlertCircle,
   X,
+  Bell,
+  Loader2,
 } from 'lucide-react';
 import { db } from '../db';
 import { Resolution, ResolutionInterval, isResolutionDueOnDate, DailyLog } from '../types';
 import { getTodayLocalDate } from '../utils/dateUtils';
 import { processSyncQueue } from '../syncEngine';
+import { sendTestResolutionNotification } from '../utils/pushNotifications';
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS_NAMES = [
@@ -72,6 +75,24 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
   const [startDate, setStartDate] = useState(todayStr);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingTestAlert, setIsSendingTestAlert] = useState(false);
+
+  // Trigger test resolution on-screen notification
+  const handleTestResolutionAlert = async () => {
+    try {
+      setIsSendingTestAlert(true);
+      const res = await sendTestResolutionNotification();
+      if (onToast) {
+        onToast(res.message || 'On-screen resolution notification dispatched! 🎯', 'success');
+      }
+    } catch (err: any) {
+      if (onToast) {
+        onToast(err?.message || 'Failed to dispatch resolution notification', 'error');
+      }
+    } finally {
+      setIsSendingTestAlert(false);
+    }
+  };
 
   // Open modal for Create
   const handleOpenCreate = () => {
@@ -388,15 +409,33 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
             </p>
           </div>
 
-          <button
-            type="button"
-            id="btn-add-resolution"
-            onClick={handleOpenCreate}
-            className="self-start sm:self-auto inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 font-bold shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer text-sm"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>New Resolution</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            <button
+              type="button"
+              id="btn-test-resolution-alert"
+              onClick={handleTestResolutionAlert}
+              disabled={isSendingTestAlert}
+              title="Test interactive on-screen resolution notification"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xs border border-white/10 transition-all disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
+            >
+              {isSendingTestAlert ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Bell className="w-3.5 h-3.5 text-emerald-200" />
+              )}
+              <span>{isSendingTestAlert ? 'Sending...' : 'Test Alert'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-add-resolution"
+              onClick={handleOpenCreate}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 font-bold shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer text-sm"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>New Resolution</span>
+            </button>
+          </div>
         </div>
 
         {/* 2. Today's Progress Bar */}
