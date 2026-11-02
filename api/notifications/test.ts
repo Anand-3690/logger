@@ -44,25 +44,44 @@ export default async function handler(req: any, res: any) {
     let payloadStr = '';
 
     if (testType === 'resolution') {
-      const title = req.body?.title || req.query?.title || '🎯 Resolution: Morning Meditation & Dhyan';
-      const body = req.body?.body || req.query?.body || 'Did you complete your daily resolution "Morning Meditation (15m)" today?';
+      const stage = req.body?.stage || req.query?.stage || 'night';
+      const isMorning = stage === 'morning';
+      const defaultTitle = isMorning
+        ? '🌅 Today\'s Focus: Morning Meditation & Dhyan'
+        : '🌙 Evening Review: Morning Meditation & Dhyan';
+      const defaultBody = isMorning
+        ? 'Keep your resolution in mind today: "Morning Meditation (15m)". Have a great day!'
+        : 'Did you accomplish "Morning Meditation (15m)" today? Check in or log a reason if missed.';
+
+      const title = req.body?.title || req.query?.title || defaultTitle;
+      const body = req.body?.body || req.query?.body || defaultBody;
       const resId = req.body?.resolution_id || req.query?.resolution_id;
+
+      const actions = isMorning
+        ? [
+            { action: 'dismiss', title: 'Got it! 👍' },
+            { action: 'present', title: 'Already Done ✅' },
+            { action: 'view', title: 'View 🎯' },
+          ]
+        : [
+            { action: 'present', title: 'Completed ✅' },
+            { action: 'log_reason', title: 'Missed / Reason 📝' },
+            { action: 'absent', title: 'Not Today' },
+          ];
 
       payloadStr = JSON.stringify({
         title,
         body,
         icon: '/assets/icon-192.png',
         badge: '/assets/icon-192.png',
-        tag: `resolution-test-${todayStr}`,
+        tag: `resolution-test-${stage}-${todayStr}`,
         data: {
           url: '/resolutions',
           resolution_id: resId,
           log_date: todayStr,
+          stage,
         },
-        actions: [
-          { action: 'present', title: 'Completed ✅' },
-          { action: 'absent', title: 'Not Today' },
-        ],
+        actions,
       });
     } else if (testType === 'on-this-day') {
       const title = req.body?.title || req.query?.title || 'Guruhari Darshan: On This Day';

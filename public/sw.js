@@ -303,6 +303,42 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
+  // If "Missed / Reason" button is clicked: Focus app and trigger Reason Modal
+  if (action === 'log_reason') {
+    event.waitUntil(
+      (async () => {
+        const targetPath = '/resolutions';
+        const urlToOpen = new URL(targetPath, self.location.origin).href;
+
+        const allClients = await self.clients.matchAll({
+          type: 'window',
+          includeUncontrolled: true,
+        });
+
+        for (const client of allClients) {
+          if (client.url.includes(self.location.origin) && 'focus' in client) {
+            await client.focus();
+            client.postMessage({
+              type: 'OPEN_REASON_MODAL',
+              data: {
+                resolution_id: data.resolution_id,
+                resolution_title: data.resolution_title || notification.title,
+                category_id: data.category_id,
+                log_date: today,
+              },
+            });
+            return;
+          }
+        }
+
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(urlToOpen);
+        }
+      })()
+    );
+    return;
+  }
+
   // If clicked notification body itself: Open / focus the app window
   event.waitUntil(
     (async () => {

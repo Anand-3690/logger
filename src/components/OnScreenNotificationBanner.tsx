@@ -8,6 +8,10 @@ import {
   ChevronRight,
   Sparkles,
   Calendar,
+  Sun,
+  Moon,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { AppNotification, AppNotificationAction } from '../types';
 
@@ -58,7 +62,9 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
 
   // Type-specific badge and styling
   const isOtd = notifType === 'on-this-day';
-  const isRes = notifType === 'resolution';
+  const isResMorning = notifType === 'resolution-morning';
+  const isResNight = notifType === 'resolution-night';
+  const isRes = isResMorning || isResNight || notifType === 'resolution';
 
   const badgeConfig = isOtd
     ? {
@@ -69,9 +75,27 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
         glowColor: 'shadow-amber-500/15',
         accentBorder: 'border-amber-500/40',
       }
+    : isResMorning
+    ? {
+        label: 'Morning Focus',
+        icon: <Sun className="w-3.5 h-3.5 text-amber-300" />,
+        badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        ringColor: 'ring-amber-500/30',
+        glowColor: 'shadow-amber-500/15',
+        accentBorder: 'border-amber-500/40',
+      }
+    : isResNight
+    ? {
+        label: 'Evening Review',
+        icon: <Moon className="w-3.5 h-3.5 text-indigo-300" />,
+        badgeBg: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+        ringColor: 'ring-indigo-500/30',
+        glowColor: 'shadow-indigo-500/15',
+        accentBorder: 'border-indigo-500/40',
+      }
     : isRes
     ? {
-        label: 'Resolution Reminder',
+        label: 'Resolution',
         icon: <Target className="w-3.5 h-3.5 text-emerald-400" />,
         badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
         ringColor: 'ring-emerald-500/30',
@@ -129,6 +153,10 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
             className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
               isOtd
                 ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                : isResMorning
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                : isResNight
+                ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300'
                 : isRes
                 ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
                 : 'bg-blue-500/15 border-blue-500/30 text-blue-400'
@@ -136,6 +164,10 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
           >
             {isOtd ? (
               <Sparkles className="w-5 h-5 text-amber-400" />
+            ) : isResMorning ? (
+              <Sun className="w-5 h-5 text-amber-300" />
+            ) : isResNight ? (
+              <Moon className="w-5 h-5 text-indigo-300" />
             ) : isRes ? (
               <Target className="w-5 h-5 text-emerald-400" />
             ) : (
@@ -166,6 +198,9 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
               if (act.action === 'present') {
                 btnClass =
                   'bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-emerald-900/40';
+              } else if (act.action === 'log_reason') {
+                btnClass =
+                  'bg-amber-600 hover:bg-amber-500 text-white font-bold shadow-amber-900/40';
               } else if (act.action === 'view' && isOtd) {
                 btnClass =
                   'bg-amber-600 hover:bg-amber-500 text-white font-bold shadow-amber-900/40';
@@ -188,7 +223,9 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs shadow-xs active:scale-95 transition-all cursor-pointer ${btnClass}`}
                 >
                   {act.action === 'present' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                  {act.action === 'log_reason' && <Pencil className="w-3.5 h-3.5" />}
                   {act.action === 'view' && <ChevronRight className="w-3.5 h-3.5" />}
+                  {act.action === 'dismiss' && <Check className="w-3.5 h-3.5" />}
                   <span>{act.title}</span>
                 </button>
               );
@@ -200,11 +237,11 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/5 overflow-hidden">
           <div
             className={`h-full transition-all duration-100 ease-linear ${
-              isOtd
+              isOtd || isResMorning
                 ? 'bg-amber-400'
-                : isRes
-                ? 'bg-emerald-400'
-                : 'bg-blue-400'
+                : isResNight
+                ? 'bg-indigo-400'
+                : 'bg-emerald-400'
             }`}
             style={{ width: `${progress}%` }}
           />
@@ -213,4 +250,5 @@ export const OnScreenNotificationBanner: React.FC<OnScreenNotificationBannerProp
     </div>
   );
 };
+
 

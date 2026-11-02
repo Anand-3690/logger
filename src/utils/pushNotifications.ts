@@ -502,9 +502,12 @@ export async function sendTestOnThisDayNotification(authToken?: string | null): 
 }
 
 /**
- * Trigger immediate test push notification for Resolutions
+ * Trigger immediate test push notification for Resolutions (morning intention or night review)
  */
-export async function sendTestResolutionNotification(authToken?: string | null): Promise<any> {
+export async function sendTestResolutionNotification(
+  authToken?: string | null,
+  stage: 'morning' | 'night' = 'night'
+): Promise<any> {
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
     now.getDate()
@@ -527,28 +530,41 @@ export async function sendTestResolutionNotification(authToken?: string | null):
     }
   } catch {}
 
-  const title = `🎯 Resolution: ${resTitle}`;
-  const body = `Time for your daily resolution: "${resTitle}". Did you accomplish it today?`;
+  const isMorning = stage === 'morning';
+  const title = isMorning ? `🌅 Today's Focus: ${resTitle}` : `🌙 Evening Review: ${resTitle}`;
+  const body = isMorning
+    ? `Keep your commitment in mind today: "${resTitle}". Have a great and mindful day!`
+    : `Did you accomplish your resolution: "${resTitle}" today? Check in or tap to log a reason if missed.`;
+
+  const notifType = isMorning ? 'resolution-morning' : 'resolution-night';
+  const actions: AppNotificationAction[] = isMorning
+    ? [
+        { action: 'dismiss', title: 'Got it! 👍', variant: 'secondary' },
+        { action: 'present', title: 'Already Done ✅', variant: 'primary' },
+        { action: 'view', title: 'View 🎯', variant: 'secondary' },
+      ]
+    : [
+        { action: 'present', title: 'Completed ✅', variant: 'primary' },
+        { action: 'log_reason', title: 'Missed / Reason 📝', variant: 'secondary' },
+        { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+      ];
 
   // 1. Dispatch rich interactive on-screen notification immediately
   await dispatchAppNotification({
-    id: `test-resolution-${Date.now()}`,
+    id: `test-resolution-${stage}-${Date.now()}`,
     title,
     body,
     icon: '/assets/icon-192.png',
-    type: 'resolution',
+    type: notifType,
     data: {
       url: '/resolutions',
       resolution_id: resId,
       resolution_title: resTitle,
       category_id: categoryId,
       log_date: todayStr,
+      stage,
     },
-    actions: [
-      { action: 'present', title: 'Completed ✅', variant: 'primary' },
-      { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
-      { action: 'view', title: 'View 🎯', variant: 'secondary' },
-    ],
+    actions,
   });
 
   // 2. Request browser permission if default
@@ -562,24 +578,24 @@ export async function sendTestResolutionNotification(authToken?: string | null):
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    await fetch('/api/notifications/test?type=resolution', {
+    await fetch(`/api/notifications/test?type=resolution&stage=${stage}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ title, body, resolution_id: resId }),
+      body: JSON.stringify({ title, body, resolution_id: resId, stage }),
     }).catch(() => {});
-    await fetch('/api/cron/notify?force=true', { method: 'POST', headers }).catch(() => {});
+    await fetch(`/api/cron/notify?force=true&stage=${stage}`, { method: 'POST', headers }).catch(() => {});
   } catch {}
 
   return {
     success: true,
-    message: `On-screen resolution alert for "${resTitle}" displayed! Check the interactive popup.`,
+    message: `On-screen ${isMorning ? 'morning focus' : 'evening check-in'} alert for "${resTitle}" displayed!`,
   };
 }
 
 /**
- * Check and trigger due Resolution notifications in-app
+ * Check and trigger due Resolution notifications in-app (Morning Intention & Night Review)
  */
-export async function checkAndTriggerDueResolutions(force: boolean = false): Promise<number> {
+export async function checkAndTriggerDueResolutions(force: boolean = false, targetStage?: 'morning' | 'night'): Promise<number> {
   if (typeof window === 'undefined') return 0;
 
   const now = new Date();
@@ -599,46 +615,84 @@ export async function checkAndTriggerDueResolutions(force: boolean = false): Pro
       // 1. Is it due today?
       if (!isResolutionDueOnDate(res, todayStr)) continue;
 
-      // 2. Is it already completed today?
-      if (!force && res.last_completed_at === todayStr) continue;
+      const isCompletedToday = res.last_completed_at === todayStr;
+      const morningTime = (res.morning_reminder_time || res.reminder_time || '09:00').slice(0, 5);
+      const nightTime = (res.night_reminder_time || '23:00').slice(0, 5);
 
-      // 3. Time check: has reminder_time arrived today?
-      const reminderTime = (res.reminder_time || '08:00').slice(0, 5);
-      if (!force && currentTime < reminderTime) {
-        continue;
+      // Stage A: 9 AM (or custom morning time) - Morning Intention
+      if (!targetStage || targetStage === 'morning') {
+        const morningAlertKey = `last_alert_morning_res_${res.id}_${todayStr}`;
+        const shouldTriggerMorning =
+          force ||
+          (!localStorage.getItem(morningAlertKey) &&
+            currentTime >= morningTime &&
+            currentTime < nightTime &&
+            !isCompletedToday);
+
+        if (shouldTriggerMorning) {
+          localStorage.setItem(morningAlertKey, new Date().toISOString());
+
+          await dispatchAppNotification({
+            id: `resolution-morning-${res.id}-${todayStr}`,
+            title: `🌅 Today's Focus: ${res.title}`,
+            body: `Keep your resolution in mind today: "${res.title}". Have a productive day!`,
+            icon: '/assets/icon-192.png',
+            type: 'resolution-morning',
+            data: {
+              url: '/resolutions',
+              resolution_id: res.id,
+              resolution_title: res.title,
+              category_id: res.category_id,
+              log_date: todayStr,
+              stage: 'morning',
+            },
+            actions: [
+              { action: 'dismiss', title: 'Got it! 👍', variant: 'secondary' },
+              { action: 'present', title: 'Already Done ✅', variant: 'primary' },
+              { action: 'view', title: 'View 🎯', variant: 'secondary' },
+            ],
+          });
+
+          triggeredCount++;
+        }
       }
 
-      // 4. Have we already alerted today for this resolution?
-      const alertKey = `last_alert_res_${res.id}_${todayStr}`;
-      if (!force && localStorage.getItem(alertKey)) {
-        continue;
+      // Stage B: 11 PM (or custom night time) - Night Accountability & Reason
+      if (!targetStage || targetStage === 'night') {
+        const nightAlertKey = `last_alert_night_res_${res.id}_${todayStr}`;
+        const shouldTriggerNight =
+          force ||
+          (!localStorage.getItem(nightAlertKey) &&
+            currentTime >= nightTime &&
+            !isCompletedToday);
+
+        if (shouldTriggerNight) {
+          localStorage.setItem(nightAlertKey, new Date().toISOString());
+
+          await dispatchAppNotification({
+            id: `resolution-night-${res.id}-${todayStr}`,
+            title: `🌙 Evening Check-in: ${res.title}`,
+            body: `Did you accomplish "${res.title}" today? Check in or log a reason if missed.`,
+            icon: '/assets/icon-192.png',
+            type: 'resolution-night',
+            data: {
+              url: '/resolutions',
+              resolution_id: res.id,
+              resolution_title: res.title,
+              category_id: res.category_id,
+              log_date: todayStr,
+              stage: 'night',
+            },
+            actions: [
+              { action: 'present', title: 'Completed ✅', variant: 'primary' },
+              { action: 'log_reason', title: 'Missed / Reason 📝', variant: 'secondary' },
+              { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+            ],
+          });
+
+          triggeredCount++;
+        }
       }
-
-      // Mark alerted
-      localStorage.setItem(alertKey, new Date().toISOString());
-
-      // Dispatch interactive on-screen notification
-      await dispatchAppNotification({
-        id: `resolution-${res.id}-${todayStr}`,
-        title: `🎯 Resolution: ${res.title}`,
-        body: `Time for your scheduled resolution: "${res.title}". Did you accomplish it today?`,
-        icon: '/assets/icon-192.png',
-        type: 'resolution',
-        data: {
-          url: '/resolutions',
-          resolution_id: res.id,
-          resolution_title: res.title,
-          category_id: res.category_id,
-          log_date: todayStr,
-        },
-        actions: [
-          { action: 'present', title: 'Completed ✅', variant: 'primary' },
-          { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
-          { action: 'view', title: 'View 🎯', variant: 'secondary' },
-        ],
-      });
-
-      triggeredCount++;
     }
 
     return triggeredCount;

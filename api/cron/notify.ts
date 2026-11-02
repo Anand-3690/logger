@@ -173,7 +173,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 3. Process Resolutions Reminders
+    // 3. Process Resolutions Reminders (Morning Focus & Night Review)
     let matchedResolutionsCount = 0;
     try {
       const { data: resolutionsData } = await supabase
@@ -182,50 +182,107 @@ export default async function handler(req: any, res: any) {
         .eq('is_active', true);
 
       const activeResolutions = resolutionsData || [];
-      const matchedResolutions = activeResolutions.filter((res) => {
-        if (!checkResolutionDue(res, targetDateStr)) return false;
-        if (isForce) return true;
-        const cleanTime = (res.reminder_time || '08:00').slice(0, 5);
-        if (requestedTime) return cleanTime === requestedTime;
-        return cleanTime === utcTime || cleanTime === istTime;
-      });
 
-      matchedResolutionsCount = matchedResolutions.length;
+      for (const resItem of activeResolutions) {
+        if (!checkResolutionDue(resItem, targetDateStr)) continue;
 
-      for (const resItem of matchedResolutions) {
-        const payload = JSON.stringify({
-          title: `🎯 Resolution: ${resItem.title}`,
-          body: `Time for your resolution: "${resItem.title}". Did you accomplish it today?`,
-          icon: '/assets/icon-192.png',
-          badge: '/assets/icon-192.png',
-          tag: `resolution-${resItem.id}-${targetDateStr}`,
-          data: {
-            url: '/resolutions',
-            resolution_id: resItem.id,
-            category_id: resItem.category_id,
-            log_date: targetDateStr,
-          },
-          actions: [
-            { action: 'present', title: 'Completed ✅' },
-            { action: 'absent', title: 'Not Today' },
-          ],
-        });
+        const morningTime = (resItem.morning_reminder_time || resItem.reminder_time || '09:00').slice(0, 5);
+        const nightTime = (resItem.night_reminder_time || '23:00').slice(0, 5);
 
-        for (const sub of subsList) {
-          try {
-            const pushSub =
-              typeof sub.subscription_json === 'string'
-                ? JSON.parse(sub.subscription_json)
-                : sub.subscription_json;
+        const isMorningMatch = isForce
+          ? (req.query?.stage === 'morning')
+          : (requestedTime ? morningTime === requestedTime : (morningTime === utcTime || morningTime === istTime));
 
-            await webpush.sendNotification(pushSub, payload, {
-              TTL: 86400,
-              urgency: 'high',
-            });
-            totalSent++;
-          } catch (err: any) {
-            if (err.statusCode === 404 || err.statusCode === 410) {
-              await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+        const isNightMatch = isForce
+          ? (req.query?.stage === 'night' || !req.query?.stage)
+          : (requestedTime ? nightTime === requestedTime : (nightTime === utcTime || nightTime === istTime));
+
+        // 3a. Morning Focus Reminder
+        if (isMorningMatch) {
+          matchedResolutionsCount++;
+          const payload = JSON.stringify({
+            title: `🌅 Today's Focus: ${resItem.title}`,
+            body: `Keep your resolution in mind today: "${resItem.title}". Have a productive day!`,
+            icon: '/assets/icon-192.png',
+            badge: '/assets/icon-192.png',
+            tag: `resolution-morning-${resItem.id}-${targetDateStr}`,
+            data: {
+              url: '/resolutions',
+              resolution_id: resItem.id,
+              category_id: resItem.category_id,
+              log_date: targetDateStr,
+              stage: 'morning',
+            },
+            actions: [
+              { action: 'dismiss', title: 'Got it! 👍' },
+              { action: 'present', title: 'Already Done ✅' },
+              { action: 'view', title: 'View 🎯' },
+            ],
+          });
+
+          for (const sub of subsList) {
+            try {
+              const pushSub =
+                typeof sub.subscription_json === 'string'
+                  ? JSON.parse(sub.subscription_json)
+                  : sub.subscription_json;
+
+              await webpush.sendNotification(pushSub, payload, {
+                TTL: 86400,
+                urgency: 'high',
+              });
+              totalSent++;
+            } catch (err: any) {
+              if (err.statusCode === 404 || err.statusCode === 410) {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+              }
+            }
+          }
+        }
+
+        // 3b. Night Review & Accountability
+        if (isNightMatch) {
+          if (!isForce && resItem.last_completed_at === targetDateStr) {
+            continue; // Already completed today, skip evening nag
+          }
+
+          matchedResolutionsCount++;
+          const payload = JSON.stringify({
+            title: `🌙 Evening Check-in: ${resItem.title}`,
+            body: `Did you accomplish "${resItem.title}" today? Check in or tap to log a reason if missed.`,
+            icon: '/assets/icon-192.png',
+            badge: '/assets/icon-192.png',
+            tag: `resolution-night-${resItem.id}-${targetDateStr}`,
+            data: {
+              url: '/resolutions',
+              resolution_id: resItem.id,
+              category_id: resItem.category_id,
+              log_date: targetDateStr,
+              stage: 'night',
+            },
+            actions: [
+              { action: 'present', title: 'Completed ✅' },
+              { action: 'log_reason', title: 'Missed / Reason 📝' },
+              { action: 'absent', title: 'Not Today' },
+            ],
+          });
+
+          for (const sub of subsList) {
+            try {
+              const pushSub =
+                typeof sub.subscription_json === 'string'
+                  ? JSON.parse(sub.subscription_json)
+                  : sub.subscription_json;
+
+              await webpush.sendNotification(pushSub, payload, {
+                TTL: 86400,
+                urgency: 'high',
+              });
+              totalSent++;
+            } catch (err: any) {
+              if (err.statusCode === 404 || err.statusCode === 410) {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+              }
             }
           }
         }

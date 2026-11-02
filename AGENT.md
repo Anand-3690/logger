@@ -92,3 +92,10 @@
   - Wired interactive one-tap check-in buttons ("Completed ✅", "Not Today ⚪", "Open Memories 📖") directly within the on-screen banner to write to IndexedDB and queue cloud sync.
   - Fixed Service Worker and `App.tsx` `RECORD_LOG` message listeners to properly update `db.resolutions.last_completed_at` upon notification check-in.
   - Added dedicated "Test Alert" button directly on the Resolutions screen header and unlocked test alert buttons in `NotificationSettingsCard.tsx`.
+- **Two-Stage Daily Resolution Notification Cadence (Morning Focus & Night Review):**
+  - **Morning Focus (09:00 AM default):** Inspirational morning prompt reminding the user of their commitment for the day without forcing an immediate check-in.
+  - **Night Review & Accountability (11:00 PM default):** Evening check-in prompting whether today's resolution was completed or missed, with one-tap action to log reasons for missed habits. Automatically skips if already completed earlier in the day.
+  - **Individual Custom Timings:** Both `morning_reminder_time` and `night_reminder_time` are customizable per resolution with quick-select presets (`07:00`-`10:00` for morning, `21:00`-`00:00` for night), persisted in Dexie and synced to Supabase via `syncEngine.ts`.
+  - **Sequential Independent Prompts:** Multiple resolutions due at the same time enqueue into `notificationQueue: AppNotification[]` in `App.tsx` so users receive distinct, sequential prompts per habit without alerts colliding or overwriting each other.
+  - **Missed Reason Logging (`ResolutionReasonModal.tsx`):** Built glassmorphic reflection modal with quick-select reason chips (e.g., Low Energy, Ran out of Time, Traveled, Busy, Unwell, Planned Rest, Distracted) plus optional custom notes. Records missed entry (`status: 'absent'`) in `daily_logs` and queues sync.
+  - **Omni-Channel Synchronization:** Updated `public/sw.js` with `log_reason` action, broadcasting `OPEN_REASON_MODAL` to app clients. Updated serverless cron endpoints (`api/cron/notify.ts`, `api/notifications/test.ts`) to evaluate and deliver morning vs evening notification payloads with interactive OS notification action buttons.

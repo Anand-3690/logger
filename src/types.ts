@@ -33,7 +33,7 @@ export interface AppNotification {
   title: string;
   body: string;
   icon?: string;
-  type?: 'on-this-day' | 'resolution' | 'habit' | 'general';
+  type?: 'on-this-day' | 'resolution-morning' | 'resolution-night' | 'resolution' | 'habit' | 'general';
   data?: {
     url?: string;
     log_date?: string;
@@ -41,6 +41,7 @@ export interface AppNotification {
     category_name?: string;
     resolution_id?: string;
     resolution_title?: string;
+    stage?: 'morning' | 'night';
     [key: string]: any;
   };
   actions?: AppNotificationAction[];
@@ -57,7 +58,9 @@ export interface Resolution {
   title: string;
   description?: string;
   interval_type: ResolutionInterval;
-  reminder_time: string; // "HH:MM" in 24h format, e.g. "07:30"
+  reminder_time: string; // "HH:MM" in 24h format, e.g. "09:00" (fallback & backward-compatible)
+  morning_reminder_time?: string; // "HH:MM" in 24h format, default "09:00"
+  night_reminder_time?: string; // "HH:MM" in 24h format, default "23:00"
   days_of_week?: number[]; // 0 = Sun, 1 = Mon, ..., 6 = Sat (for weekly)
   day_of_month?: number; // 1..31 (for monthly)
   month_of_year?: number; // 1..12 (for yearly)

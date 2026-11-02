@@ -49,6 +49,7 @@ async function adaptiveUpsert(
     // Check common optional columns if mentioned in error
     const candidateColumns = [
       'photo_url', 'photo_data', 'photo_storage_path', 'updated_at', 'reminder_time',
+      'morning_reminder_time', 'night_reminder_time',
       'notes', 'status', 'icon', 'color_code', 'is_active', 'is_on_this_day',
       'title', 'description', 'interval_type', 'days_of_week', 'day_of_month',
       'month_of_year', 'custom_interval_days', 'start_date', 'last_completed_at'
@@ -221,7 +222,9 @@ export const processSyncQueue = async () => {
                   title: record.title,
                   description: record.description || null,
                   interval_type: record.interval_type || 'daily',
-                  reminder_time: record.reminder_time || '08:00',
+                  reminder_time: record.reminder_time || record.morning_reminder_time || '09:00',
+                  morning_reminder_time: record.morning_reminder_time || record.reminder_time || '09:00',
+                  night_reminder_time: record.night_reminder_time || '23:00',
                   days_of_week: record.days_of_week || null,
                   day_of_month: record.day_of_month || null,
                   month_of_year: record.month_of_year || null,

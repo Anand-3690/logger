@@ -17,6 +17,8 @@ import {
   X,
   Bell,
   Loader2,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { db } from '../db';
 import { Resolution, ResolutionInterval, isResolutionDueOnDate, DailyLog } from '../types';
@@ -30,7 +32,8 @@ const MONTHS_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-const PRESET_TIMES = ['06:00', '07:00', '08:00', '09:00', '18:00', '20:00', '21:00'];
+const MORNING_PRESETS = ['07:00', '08:00', '09:00', '10:00'];
+const NIGHT_PRESETS = ['21:00', '22:00', '23:00', '00:00'];
 
 const SUGGESTIONS = [
   'Morning Meditation & Dhyan (15m)',
@@ -67,7 +70,8 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [intervalType, setIntervalType] = useState<ResolutionInterval>('daily');
-  const [reminderTime, setReminderTime] = useState('08:00');
+  const [morningReminderTime, setMorningReminderTime] = useState('09:00');
+  const [nightReminderTime, setNightReminderTime] = useState('23:00');
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri default
   const [dayOfMonth, setDayOfMonth] = useState<number>(1);
   const [monthOfYear, setMonthOfYear] = useState<number>(1);
@@ -78,12 +82,12 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
   const [isSendingTestAlert, setIsSendingTestAlert] = useState(false);
 
   // Trigger test resolution on-screen notification
-  const handleTestResolutionAlert = async () => {
+  const handleTestResolutionAlert = async (stage: 'morning' | 'night' = 'night') => {
     try {
       setIsSendingTestAlert(true);
-      const res = await sendTestResolutionNotification();
+      const res = await sendTestResolutionNotification(null, stage);
       if (onToast) {
-        onToast(res.message || 'On-screen resolution notification dispatched! 🎯', 'success');
+        onToast(res.message || `On-screen ${stage === 'morning' ? 'morning focus' : 'evening check-in'} alert dispatched! 🎯`, 'success');
       }
     } catch (err: any) {
       if (onToast) {
@@ -100,7 +104,8 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
     setTitle('');
     setDescription('');
     setIntervalType('daily');
-    setReminderTime('08:00');
+    setMorningReminderTime('09:00');
+    setNightReminderTime('23:00');
     setSelectedDays([0, 1, 2, 3, 4, 5, 6]);
     setDayOfMonth(1);
     setMonthOfYear(1);
@@ -116,7 +121,8 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
     setTitle(res.title);
     setDescription(res.description || '');
     setIntervalType(res.interval_type);
-    setReminderTime(res.reminder_time || '08:00');
+    setMorningReminderTime(res.morning_reminder_time || res.reminder_time || '09:00');
+    setNightReminderTime(res.night_reminder_time || '23:00');
     setSelectedDays(res.days_of_week && res.days_of_week.length > 0 ? res.days_of_week : [0, 1, 2, 3, 4, 5, 6]);
     setDayOfMonth(res.day_of_month || 1);
     setMonthOfYear(res.month_of_year || 1);
@@ -152,7 +158,9 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
         title: title.trim(),
         description: description.trim() || undefined,
         interval_type: intervalType,
-        reminder_time: reminderTime || '08:00',
+        reminder_time: morningReminderTime || '09:00', // backward compatibility fallback
+        morning_reminder_time: morningReminderTime || '09:00',
+        night_reminder_time: nightReminderTime || '23:00',
         days_of_week: intervalType === 'weekly' ? selectedDays : undefined,
         day_of_month: intervalType === 'monthly' || intervalType === 'yearly' ? dayOfMonth : undefined,
         month_of_year: intervalType === 'yearly' ? monthOfYear : undefined,
@@ -412,18 +420,34 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
           <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
             <button
               type="button"
-              id="btn-test-resolution-alert"
-              onClick={handleTestResolutionAlert}
+              id="btn-test-morning-alert"
+              onClick={() => handleTestResolutionAlert('morning')}
               disabled={isSendingTestAlert}
-              title="Test interactive on-screen resolution notification"
+              title="Test 9 AM Morning Focus Intention Notification"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xs border border-white/10 transition-all disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
             >
               {isSendingTestAlert ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Bell className="w-3.5 h-3.5 text-emerald-200" />
+                <Sun className="w-3.5 h-3.5 text-amber-300" />
               )}
-              <span>{isSendingTestAlert ? 'Sending...' : 'Test Alert'}</span>
+              <span>Test Morning (9 AM)</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-test-night-alert"
+              onClick={() => handleTestResolutionAlert('night')}
+              disabled={isSendingTestAlert}
+              title="Test 11 PM Evening Review & Reason Notification"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xs border border-white/10 transition-all disabled:opacity-50 cursor-pointer shadow-xs active:scale-95"
+            >
+              {isSendingTestAlert ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-indigo-300" />
+              )}
+              <span>Test Night (11 PM)</span>
             </button>
 
             <button
@@ -551,7 +575,9 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
                       <Clock className="w-3 h-3 text-emerald-600" />
                       <span className="capitalize">{res.interval_type}</span>
                       <span>•</span>
-                      <span>{formatTimeDisplay(res.reminder_time)}</span>
+                      <span title="Morning reminder">🌅 {formatTimeDisplay(res.morning_reminder_time || res.reminder_time || '09:00')}</span>
+                      <span>•</span>
+                      <span title="Evening review & reason check-in">🌙 {formatTimeDisplay(res.night_reminder_time || '23:00')}</span>
                     </div>
 
                     <div className="flex items-center gap-1 text-neutral-400">
@@ -849,41 +875,99 @@ export const ResolutionsView: React.FC<ResolutionsViewProps> = ({ onToast }) => 
                 </div>
               )}
 
-              {/* Reminder Timing & Presets */}
-              <div className="space-y-2 p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-100">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+              {/* Customizable 2-Stage Daily Reminders */}
+              <div className="space-y-3.5 p-4 bg-emerald-50/40 rounded-2xl border border-emerald-100">
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Reminder Timing</span>
-                  </label>
-                  <span className="text-xs font-extrabold text-emerald-700">
-                    {formatTimeDisplay(reminderTime)}
-                  </span>
+                    <span>Two-Stage Daily Notifications</span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Customizable morning intention reminder and night accountability check-in.
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    required
-                    value={reminderTime}
-                    onChange={(e) => setReminderTime(e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-sm outline-none"
-                  />
-                  <div className="flex items-center gap-1 overflow-x-auto py-1 scrollbar-none">
-                    {PRESET_TIMES.map((time) => (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => setReminderTime(time)}
-                        className={`text-[11px] px-2 py-1 rounded-lg border transition-all cursor-pointer ${
-                          reminderTime === time
-                            ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
-                            : 'bg-white text-neutral-600 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        {formatTimeDisplay(time)}
-                      </button>
-                    ))}
+                {/* 1. Morning Reminder (9:00 AM default) */}
+                <div className="p-3 bg-white/90 rounded-xl border border-emerald-100/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                      <Sun className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Morning Focus Reminder</span>
+                    </label>
+                    <span className="text-xs font-extrabold text-amber-700">
+                      {formatTimeDisplay(morningReminderTime)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Gentle morning alert setting your commitment for the day.
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      required
+                      value={morningReminderTime}
+                      onChange={(e) => setMorningReminderTime(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none"
+                    />
+                    <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none">
+                      {MORNING_PRESETS.map((time) => (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => setMorningReminderTime(time)}
+                          className={`text-[11px] px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                            morningReminderTime === time
+                              ? 'bg-amber-600 text-white border-amber-600 font-bold'
+                              : 'bg-white text-neutral-600 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {formatTimeDisplay(time)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Night Review & Accountability (11:00 PM default) */}
+                <div className="p-3 bg-white/90 rounded-xl border border-indigo-100/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                      <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Night Review & Accountability</span>
+                    </label>
+                    <span className="text-xs font-extrabold text-indigo-700">
+                      {formatTimeDisplay(nightReminderTime)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Asks if you completed it today or want to log a reason if missed.
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      required
+                      value={nightReminderTime}
+                      onChange={(e) => setNightReminderTime(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-xs outline-none"
+                    />
+                    <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none">
+                      {NIGHT_PRESETS.map((time) => (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => setNightReminderTime(time)}
+                          className={`text-[11px] px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                            nightReminderTime === time
+                              ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                              : 'bg-white text-neutral-600 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {formatTimeDisplay(time)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -147,14 +147,14 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
     }
   };
 
-  const handleSendTestResolution = async () => {
+  const handleSendTestResolution = async (stage: 'morning' | 'night' = 'night') => {
     try {
       setIsTestingResolution(true);
       setFeedbackMsg(null);
-      const res = await sendTestResolutionNotification(authToken);
+      const res = await sendTestResolutionNotification(authToken, stage);
       setFeedbackMsg({
         type: 'success',
-        text: res.message || 'Resolution test notification dispatched! 🎯',
+        text: res.message || `Resolution test ${stage} notification dispatched! 🎯`,
       });
       if (onRefreshLogs) onRefreshLogs();
     } catch (err: any) {
@@ -350,13 +350,29 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             <span>Test alert for today</span>
           </button>
 
-          {/* Test Resolution Notification Button */}
+          {/* Test Resolution Notification Buttons */}
           <button
-            id="btn-send-test-resolution"
+            id="btn-send-test-resolution-morning"
             type="button"
-            onClick={handleSendTestResolution}
+            onClick={() => handleSendTestResolution('morning')}
             disabled={isTestingResolution}
-            title="Test interactive 'Resolution' alert with check-in buttons"
+            title="Test 9 AM morning focus reminder"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
+          >
+            {isTestingResolution ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Target className="w-3.5 h-3.5 text-amber-200" />
+            )}
+            <span>Test Morning Focus</span>
+          </button>
+
+          <button
+            id="btn-send-test-resolution-night"
+            type="button"
+            onClick={() => handleSendTestResolution('night')}
+            disabled={isTestingResolution}
+            title="Test 11 PM evening review & reason check-in"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-40 shadow-xs cursor-pointer"
           >
             {isTestingResolution ? (
@@ -364,7 +380,7 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
             ) : (
               <Target className="w-3.5 h-3.5 text-emerald-200" />
             )}
-            <span>Test Resolution Alert</span>
+            <span>Test Night Review</span>
           </button>
 
           {/* Trigger Cron Tick Now */}

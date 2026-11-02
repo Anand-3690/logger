@@ -14,6 +14,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { QuickLog } from './components/QuickLog';
 import { ResolutionsView } from './components/ResolutionsView';
 import { OnScreenNotificationBanner } from './components/OnScreenNotificationBanner';
+import { ResolutionReasonModal } from './components/ResolutionReasonModal';
 import { resolveMigratedIcon } from './components/CategoryIcon';
 import {
   registerServiceWorker,
@@ -166,18 +167,50 @@ function AuthenticatedApp() {
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title?: string } | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+  const [notificationQueue, setNotificationQueue] = useState<AppNotification[]>([]);
+  const [reasonModalData, setReasonModalData] = useState<{
+    resolutionId: string;
+    resolutionTitle: string;
+    categoryId?: string;
+    logDate: string;
+  } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const enqueueNotification = useCallback((notif: AppNotification) => {
+    setActiveNotification((current) => {
+      if (!current) {
+        return notif;
+      }
+      setNotificationQueue((prev) => {
+        if (prev.some((n) => n.id === notif.id)) return prev;
+        return [...prev, notif];
+      });
+      return current;
+    });
+  }, []);
+
+  const popNextNotification = useCallback(() => {
+    setActiveNotification(null);
+    setNotificationQueue((prev) => {
+      if (prev.length > 0) {
+        const [next, ...rest] = prev;
+        setTimeout(() => setActiveNotification(next), 250);
+        return rest;
+      }
+      return [];
+    });
+  }, []);
+
   // Listen for rich in-app on-screen notifications
   useEffect(() => {
     const handleAppNotification = (e: Event) => {
       const customEvent = e as CustomEvent<AppNotification>;
       if (customEvent.detail) {
-        setActiveNotification(customEvent.detail);
+        enqueueNotification(customEvent.detail);
       }
     };
 
@@ -189,7 +222,7 @@ function AuthenticatedApp() {
         channel = new BroadcastChannel('daily_logger_notifications_bc');
         channel.onmessage = (event) => {
           if (event.data?.type === 'APP_NOTIFICATION' && event.data.notification) {
-            setActiveNotification(event.data.notification);
+            enqueueNotification(event.data.notification);
           }
         };
       }
@@ -199,16 +232,16 @@ function AuthenticatedApp() {
       window.removeEventListener(APP_NOTIFICATION_EVENT, handleAppNotification);
       channel?.close();
     };
-  }, []);
+  }, [enqueueNotification]);
 
   const handleNotificationAction = async (action: string, notif: AppNotification) => {
-    setActiveNotification(null);
-
     if (action === 'dismiss') {
+      popNextNotification();
       return;
     }
 
     if (action === 'view') {
+      popNextNotification();
       const url = notif.data?.url || '/';
       window.history.pushState(null, '', url);
       if (url.includes('/resolutions')) {
@@ -224,7 +257,19 @@ function AuthenticatedApp() {
       return;
     }
 
+    if (action === 'log_reason') {
+      setActiveNotification(null);
+      setReasonModalData({
+        resolutionId: notif.data?.resolution_id || '',
+        resolutionTitle: notif.data?.resolution_title || 'Resolution',
+        categoryId: notif.data?.category_id,
+        logDate: notif.data?.log_date || new Date().toISOString().split('T')[0],
+      });
+      return;
+    }
+
     if (action === 'present' || action === 'absent') {
+      popNextNotification();
       const isPresent = action === 'present';
       const logDate = notif.data?.log_date || new Date().toISOString().split('T')[0];
       const resId = notif.data?.resolution_id;
@@ -285,6 +330,47 @@ function AuthenticatedApp() {
         console.error('Failed to record notification action:', err);
         showToast('Failed to record activity', 'error');
       }
+    }
+  };
+
+  const handleSaveResolutionReason = async (reason: string) => {
+    if (!reasonModalData) return;
+    const { resolutionId, resolutionTitle, categoryId, logDate } = reasonModalData;
+    const now = new Date().toISOString();
+    const catId = categoryId || categories[0]?.id || 'general';
+
+    try {
+      const existing = await db.dailyLogs.where({ log_date: logDate, category_id: catId }).first();
+      const id = existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`);
+      const noteLine = `Missed resolution: "${resolutionTitle}" (Reason: ${reason})`;
+
+      const record: DailyLog = {
+        id,
+        log_date: logDate,
+        category_id: catId,
+        notes: existing?.notes ? `${existing.notes}\n• ${noteLine}` : `• ${noteLine}`,
+        status: 'absent',
+        updated_at: now,
+        created_at: existing ? existing.created_at : now,
+      };
+
+      await db.dailyLogs.put(record);
+      await db.syncQueue.put({
+        id,
+        table: 'daily_logs',
+        action: 'upsert',
+        timestamp: Date.now(),
+      });
+
+      processSyncQueue().catch(() => {});
+      showToast(`Reflection saved for "${resolutionTitle}" 📝`, 'success');
+      setForceRender((prev) => prev + 1);
+    } catch (err) {
+      console.error('Failed to save resolution reason:', err);
+      showToast('Failed to save reflection note', 'error');
+    } finally {
+      setReasonModalData(null);
+      popNextNotification();
     }
   };
 
@@ -426,6 +512,15 @@ function AuthenticatedApp() {
           setCurrentView('dashboard');
         }
         setForceRender((prev) => prev + 1);
+      } else if (event.data && event.data.type === 'OPEN_REASON_MODAL' && event.data.data) {
+        setCurrentView('resolutions');
+        setReasonModalData({
+          resolutionId: event.data.data.resolution_id,
+          resolutionTitle: event.data.data.resolution_title || 'Resolution',
+          categoryId: event.data.data.category_id,
+          logDate: event.data.data.log_date || new Date().toISOString().split('T')[0],
+        });
+        setForceRender((prev) => prev + 1);
       } else if (event.data && event.data.type === 'RECORD_LOG' && event.data.data) {
         try {
           const { log_date, category_id, notes, status, resolution_id } = event.data.data;
@@ -485,8 +580,12 @@ function AuthenticatedApp() {
         const body = event.data.body || '';
         const notifData = event.data.data || {};
 
-        let notifType: 'on-this-day' | 'resolution' | 'habit' | 'general' = 'general';
-        if (notifData.url?.includes('on-this-day') || title.toLowerCase().includes('on this day')) {
+        let notifType: 'on-this-day' | 'resolution-morning' | 'resolution-night' | 'resolution' | 'habit' | 'general' = 'general';
+        if (notifData.stage === 'morning' || title.includes('Morning Focus') || title.includes('Focus:')) {
+          notifType = 'resolution-morning';
+        } else if (notifData.stage === 'night' || title.includes('Evening Review') || title.includes('Evening Check-in')) {
+          notifType = 'resolution-night';
+        } else if (notifData.url?.includes('on-this-day') || title.toLowerCase().includes('on this day')) {
           notifType = 'on-this-day';
         } else if (notifData.resolution_id || title.toLowerCase().includes('resolution')) {
           notifType = 'resolution';
@@ -494,14 +593,26 @@ function AuthenticatedApp() {
           notifType = 'habit';
         }
 
-        setActiveNotification({
+        enqueueNotification({
           id: notifData.tag || `push-${Date.now()}`,
           title,
           body,
           type: notifType,
           data: notifData,
           actions: event.data.actions || (
-            notifType === 'resolution'
+            notifType === 'resolution-morning'
+              ? [
+                  { action: 'dismiss', title: 'Got it! 👍', variant: 'secondary' },
+                  { action: 'present', title: 'Already Done ✅', variant: 'primary' },
+                  { action: 'view', title: 'View 🎯', variant: 'secondary' },
+                ]
+              : notifType === 'resolution-night'
+              ? [
+                  { action: 'present', title: 'Completed ✅', variant: 'primary' },
+                  { action: 'log_reason', title: 'Missed / Reason 📝', variant: 'secondary' },
+                  { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
+                ]
+              : notifType === 'resolution'
               ? [
                   { action: 'present', title: 'Completed ✅', variant: 'primary' },
                   { action: 'absent', title: 'Not Today ⚪', variant: 'secondary' },
@@ -1080,9 +1191,25 @@ function AuthenticatedApp() {
       {/* Interactive On-Screen Notification Banner for On-This-Day, Resolutions & Reminders */}
       <OnScreenNotificationBanner
         notification={activeNotification}
-        onDismiss={() => setActiveNotification(null)}
+        onDismiss={popNextNotification}
         onAction={handleNotificationAction}
       />
+
+      {/* Missed Resolution Reflection & Reason Modal */}
+      {reasonModalData && (
+        <ResolutionReasonModal
+          isOpen={Boolean(reasonModalData)}
+          onClose={() => {
+            setReasonModalData(null);
+            popNextNotification();
+          }}
+          resolutionId={reasonModalData.resolutionId}
+          resolutionTitle={reasonModalData.resolutionTitle}
+          categoryId={reasonModalData.categoryId}
+          logDate={reasonModalData.logDate}
+          onSave={handleSaveResolutionReason}
+        />
+      )}
 
       {toastMessage && (
         <div className="fixed bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
