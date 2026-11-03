@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, BellOff, BellRing, Loader2, Settings } from 'lucide-react';
+import { Bell, BellOff, BellRing, Loader2, Settings, Smartphone } from 'lucide-react';
 import {
   getPushNotificationStatus,
   subscribeToWebPush,
@@ -61,6 +61,32 @@ export const NotificationToggle: React.FC<NotificationToggleProps> = ({
       setIsLoading(false);
     }
   };
+
+  if (status.requiresPWAInstall) {
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          id="btn-header-ios-install"
+          type="button"
+          onClick={() => {
+            if (onOpenSettings) {
+              onOpenSettings();
+            } else if (onToast) {
+              onToast(
+                'On iPhone: tap Safari Share (⎋) -> "Add to Home Screen" (➕), then open from Home Screen to enable alerts.',
+                'error'
+              );
+            }
+          }}
+          title="On iPhone: tap Share (⎋) then 'Add to Home Screen' (➕) to enable native notifications"
+          className="relative p-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100/80 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
+        >
+          <Smartphone className="w-4 h-4 text-amber-600" />
+          <span className="hidden sm:inline">Add to Home Screen</span>
+        </button>
+      </div>
+    );
+  }
 
   if (!status.isSupported) {
     return null;

@@ -28,11 +28,32 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+export function isIOSDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) &&
+    !(window as any).MSStream
+  );
+}
+
+export function isStandalonePWA(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as any).standalone === true ||
+    document.referrer.includes('android-app://')
+  );
+}
+
 export interface PushStatus {
   isSupported: boolean;
   permission: NotificationPermission | 'unsupported';
   isSubscribed: boolean;
   subscription: PushSubscription | null;
+  isIOS?: boolean;
+  isStandalone?: boolean;
+  requiresPWAInstall?: boolean;
 }
 
 export interface CronStatusData {
@@ -72,12 +93,19 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
  * Get current push notification subscription status
  */
 export async function getPushNotificationStatus(): Promise<PushStatus> {
+  const isIOS = isIOSDevice();
+  const isStandalone = isStandalonePWA();
+  const requiresPWAInstall = isIOS && !isStandalone;
+
   if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('Notification' in window)) {
     return {
-      isSupported: false,
+      isSupported: isStandalone ? true : false,
       permission: 'unsupported',
       isSubscribed: false,
       subscription: null,
+      isIOS,
+      isStandalone,
+      requiresPWAInstall,
     };
   }
 
@@ -98,6 +126,9 @@ export async function getPushNotificationStatus(): Promise<PushStatus> {
       permission,
       isSubscribed,
       subscription,
+      isIOS,
+      isStandalone,
+      requiresPWAInstall: false,
     };
   } catch (err) {
     console.warn('[PWA] Error checking push subscription:', err);
@@ -106,6 +137,9 @@ export async function getPushNotificationStatus(): Promise<PushStatus> {
       permission,
       isSubscribed: permission === 'granted' && localPref,
       subscription: null,
+      isIOS,
+      isStandalone,
+      requiresPWAInstall: false,
     };
   }
 }
@@ -136,6 +170,12 @@ async function getVapidPublicKey(): Promise<string> {
  * Request notification permission and subscribe to Web Push / Local Reminders
  */
 export async function subscribeToWebPush(authToken?: string | null): Promise<PushSubscription | null> {
+  if (isIOSDevice() && !isStandalonePWA()) {
+    throw new Error(
+      'On iPhone, notifications require adding this app to your Home Screen. In Safari, tap Share (⎋), select "Add to Home Screen" (➕), then open the app from your Home Screen to enable notifications.'
+    );
+  }
+
   if (typeof window === 'undefined' || !('Notification' in window)) {
     throw new Error('Push notifications are not supported in this browser.');
   }

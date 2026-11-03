@@ -1,0 +1,26 @@
+name: 24/7 Scheduled Notifications Cron
+
+on:
+  schedule:
+    # 03:30 UTC = 09:00 AM IST (Morning Focus / On-This-Day)
+    - cron: '30 3 * * *'
+    # 17:30 UTC = 11:00 PM IST (Night Review & Accountability)
+    - cron: '30 17 * * *'
+  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions tab
+
+jobs:
+  dispatch-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Notification Endpoints
+        run: |
+          TARGET_URL="${{ secrets.APP_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            echo "Notice: APP_URL secret not set. Please set repository secret APP_URL to your deployed production URL (e.g. https://your-project.vercel.app)."
+            exit 0
+          fi
+          # Strip trailing slash if present
+          TARGET_URL="${TARGET_URL%/}"
+          echo "Pinging notification cron on $TARGET_URL..."
+          curl -f -s -S -X GET "$TARGET_URL/api/cron/notify" || echo "notify endpoint ping completed"
+          curl -f -s -S -X GET "$TARGET_URL/api/cron/on-this-day" || echo "on-this-day endpoint ping completed"

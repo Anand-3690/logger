@@ -268,6 +268,40 @@ export const NotificationSettingsCard: React.FC<NotificationSettingsCardProps> =
         </div>
       )}
 
+      {/* iOS PWA Installation Helper Banner */}
+      {status.requiresPWAInstall && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/90 rounded-2xl p-4 text-xs text-blue-950 space-y-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-bold text-sm text-blue-900 leading-tight">
+                Run as a Native Web App on iPhone (iOS)
+              </h4>
+              <p className="text-blue-800 leading-relaxed text-[11px]">
+                Apple enables native lockscreen Web Push notifications on iPhone (iOS 16.4+), but requires adding the app to your Home Screen first:
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+            <div className="bg-white/90 backdrop-blur-xs p-2.5 rounded-xl border border-blue-100 flex items-center gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
+              <span className="text-[11px] text-neutral-700 leading-tight">Tap <strong>Share</strong> (<span className="font-mono text-blue-600 font-bold">⎋</span>) in Safari</span>
+            </div>
+            <div className="bg-white/90 backdrop-blur-xs p-2.5 rounded-xl border border-blue-100 flex items-center gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
+              <span className="text-[11px] text-neutral-700 leading-tight">Select <strong>"Add to Home Screen"</strong> (<span className="font-mono text-blue-600 font-bold">➕</span>)</span>
+            </div>
+            <div className="bg-white/90 backdrop-blur-xs p-2.5 rounded-xl border border-blue-100 flex items-center gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
+              <span className="text-[11px] text-neutral-700 leading-tight">Launch from Home Screen & tap <strong>Allow</strong></span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Internal Background Engine Status Banner */}
       {cronStatus && (
         <div className="bg-neutral-50 rounded-2xl p-3 border border-neutral-100 flex flex-wrap items-center justify-between gap-2 text-xs">
