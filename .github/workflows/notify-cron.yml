@@ -24,3 +24,4 @@ jobs:
           echo "Pinging notification cron on $TARGET_URL..."
           curl -f -s -S -X GET "$TARGET_URL/api/cron/notify" || echo "notify endpoint ping completed"
           curl -f -s -S -X GET "$TARGET_URL/api/cron/on-this-day" || echo "on-this-day endpoint ping completed"
+
