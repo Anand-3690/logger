@@ -16,8 +16,8 @@ import onThisDayCronHandler from './api/cron/on-this-day';
 import statusCronHandler from './api/cron/status';
 import downloadPdfHandler from './api/download-pdf';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Determine current directory safely across ESM and CommonJS
+const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,7 +46,7 @@ app.all('/api/cron/status', (req: Request, res: Response) => statusCronHandler(r
 app.all('/api/download-pdf', (req: Request, res: Response) => downloadPdfHandler(req, res));
 
 // Serve static frontend assets from dist
-const distPath = path.join(__dirname, 'dist');
+const distPath = path.join(currentDir, 'dist');
 app.use(
   express.static(distPath, {
     maxAge: '1d',
@@ -118,3 +118,4 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
+
